@@ -1,0 +1,62 @@
+{
+  "name": "unified-service-scheduler",
+  "version": "1.0.0",
+  "description": "The Unified Service Scheduler (Scenario A) — NestJS Monorepo (apps/ + libs/) on Node.js 22+ LTS, TypeScript 5+, TypeORM & PostgreSQL 18",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "nest build scheduler-api && nest build scheduler-worker",
+    "start": "nest start scheduler-api",
+    "start:api": "node dist/apps/scheduler-api/main.js",
+    "start:worker": "node dist/apps/scheduler-worker/main.js",
+    "start:dev": "nest start scheduler-api --watch",
+    "start:worker:dev": "nest start scheduler-worker --watch",
+    "lint": "eslint \"{apps,libs}/**/*.ts\"",
+    "test": "jest",
+    "test:unit": "jest --testPathPattern=libs/.*/.*\\.spec\\.ts$",
+    "test:e2e": "jest --testPathPattern=apps/scheduler-api/test/.*\\.e2e-spec\\.ts$",
+    "test:concurrency": "jest --testPathPattern=apps/scheduler-api/test/.*\\.concurrency-spec\\.ts$ --runInBand",
+    "sso:keys": "ts-node -r tsconfig-paths/register libs/sso-mock/src/cli/generate-keys.cli.ts",
+    "sso:issue-token": "ts-node -r tsconfig-paths/register libs/sso-mock/src/cli/issue-token.cli.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.0",
+    "@nestjs/config": "^3.2.0",
+    "@nestjs/core": "^10.4.0",
+    "@nestjs/platform-express": "^10.4.0",
+    "@nestjs/schedule": "^4.1.0",
+    "@nestjs/swagger": "^7.4.0",
+    "@nestjs/terminus": "^10.2.0",
+    "@nestjs/throttler": "^6.0.0",
+    "@nestjs/typeorm": "^10.0.2",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "jose": "^5.9.0",
+    "nestjs-pino": "^4.1.0",
+    "pg": "^8.13.0",
+    "pino": "^9.4.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "typeorm": "^0.3.20"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.0",
+    "@nestjs/schematics": "^10.1.0",
+    "@nestjs/testing": "^10.4.0",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.13",
+    "@types/node": "^22.7.0",
+    "@types/supertest": "^6.0.2",
+    "eslint": "^9.11.0",
+    "eslint-plugin-boundaries": "^4.2.0",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.6.0"
+  }
+}

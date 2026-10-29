@@ -1,0 +1,71 @@
+services:
+  scheduler-api:
+    build:
+      context: ./docker/node
+      dockerfile: Dockerfile
+    container_name: scheduler-api
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    command: sh -c "npm install && npm run start:dev"
+    env_file:
+      - ./.env
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - ./:/usr/src/app
+      - node-modules:/usr/src/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - scheduler-network
+
+  scheduler-worker:
+    build:
+      context: ./docker/node
+      dockerfile: Dockerfile
+    container_name: scheduler-worker
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    command: sh -c "npm install && npm run start:worker:dev"
+    deploy:
+      replicas: 1
+    env_file:
+      - ./.env
+    volumes:
+      - ./:/usr/src/app
+      - node-modules:/usr/src/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - scheduler-network
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: scheduler-postgres
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    ports:
+      - "${FORWARD_DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - scheduler-network
+
+networks:
+  scheduler-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
+  node-modules:
+    driver: local

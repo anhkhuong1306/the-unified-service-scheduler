@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2022",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "paths": {
+      "@app/common": ["libs/common/src"],
+      "@app/common/*": ["libs/common/src/*"],
+      "@app/contracts": ["libs/contracts/src"],
+      "@app/contracts/*": ["libs/contracts/src/*"],
+      "@app/workshop": ["libs/workshop/src"],
+      "@app/workshop/*": ["libs/workshop/src/*"],
+      "@app/crm": ["libs/crm/src"],
+      "@app/crm/*": ["libs/crm/src/*"],
+      "@app/organization": ["libs/organization/src"],
+      "@app/organization/*": ["libs/organization/src/*"],
+      "@app/sso-mock": ["libs/sso-mock/src"],
+      "@app/sso-mock/*": ["libs/sso-mock/src/*"]
+    }
+  }
+}
