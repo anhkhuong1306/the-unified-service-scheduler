@@ -3,9 +3,9 @@
 | Item | Value |
 | :--- | :--- |
 | Domain | Ownership — Service / Workshop |
-| Implemented layer | **Backend** (RESTful API + persistent PostgreSQL). Client layer is stubbed via OpenAPI/Swagger UI, cURL and pre-issued tokens. |
+| Implemented layer | **Backend** (RESTful API + Real-Time SSE Streams + persistent PostgreSQL). Client layer is stubbed via OpenAPI/Swagger UI (`/docs/api`), two lightweight live SSE demo screens (`/demo` for Customer & Dealership/Technician), cURL and pre-issued tokens. |
 | Stack | TypeScript 5+, Node.js 22+ LTS, **NestJS Monorepo (`apps/` + `libs/`)**, TypeORM, PostgreSQL 18, Pino, Docker Compose |
-| Document status | v4 — NestJS Monorepo architecture |
+| Document status | v5 — Post-Concurrency Review (NestJS Monorepo architecture) |
 
 ---
 
@@ -17,9 +17,9 @@ Dealerships currently book service appointments manually. The goal is a backend 
 
 | Actor | Authenticates? | In scope (MVP) | Out of scope (documented only) |
 | :--- | :--- | :--- | :--- |
-| **Customer** (already has an account and registered vehicles) | Yes — SSO token | List own vehicles, browse dealerships & service types, query availability, optionally pick a technician, create / edit / cancel appointments, view history | Self sign-up, guest booking, nearest-dealership recommendation |
-| **Dealership Staff** | Yes — SSO token (bound to one dealership) | List appointments of **their own dealership**, approve / reject, reassign technician / bay, **swap two appointments' slots**, check-in, start, complete, mark no-show | Managing bays, technicians, shifts; multi-dealership admin |
-| **Technician** | No — a schedulable resource | Auto-assigned (best-fit) or chosen by customer / staff | Technician app |
+| **Customer** (already has an account and registered vehicles) | Yes — SSO token | List own vehicles, browse dealerships & service types, query availability, optionally pick a technician, create / edit / cancel appointments, view history, real-time SSE updates | Self sign-up, guest booking, nearest-dealership recommendation |
+| **Dealership Staff** | Yes — SSO token (bound to one dealership) | List appointments of **their own dealership**, approve / reject, reassign technician / bay, **reschedule slot (with staff override for early arrival)**, **swap two appointments' slots**, check-in, start, complete, mark no-show, real-time SSE board | Managing bays, technicians, shifts; multi-dealership admin |
+| **Technician** | No — a schedulable resource (read-only SSE board view) | Auto-assigned (best-fit) or chosen by customer / staff; views live schedule via filtered SSE board | Dedicated Technician auth / mutation app |
 | **Service Bay** | No — a schedulable resource | Auto-assigned or chosen by staff | Bay management UI |
 | **System** | — | Scheduled worker job expiring unapproved `PENDING` appointments | — |
 
@@ -28,7 +28,7 @@ Dealerships currently book service appointments manually. The goal is a backend 
 | Priority | Content |
 | :--- | :--- |
 | **P0 — core requirements** | Availability query, serialized booking with bay + qualified technician allocation, confirmed appointment record (auto-confirm), token authentication, concurrent HTTP booking tests |
-| **P1 — build for the future** | Approval flow (`requires_approval`), staff scope by dealership, reassignment, **atomic slot swap**, lifecycle state machine, PENDING expiry worker job, active-appointment limit, idempotency, optimistic locking, response envelope, structured Pino logging with masking & `@LogSpan()` decorator, minimal mock OIDC, OpenAPI/Swagger docs, module-boundary lint rules |
+| **P1 — build for the future** | Approval flow (`requires_approval`), staff scope by dealership, reassignment, **staff reschedule (early-arrival override)**, **atomic slot swap**, **real-time SSE streams (`@Sse()` + PostgreSQL `LISTEN/NOTIFY` → RxJS `Subject` with event `version` ordering) & 2 live demo screens (Customer view + Dealership/Technician board)**, lifecycle state machine, PENDING expiry worker job, active-appointment limit (protected by customer advisory lock), atomic idempotency with 60s in-progress lease, optimistic locking, response envelope, structured Pino logging with masking & `@LogSpan()` decorator, minimal mock OIDC, OpenAPI/Swagger docs, module-boundary lint rules |
 | **P2 — design only** | Overrun re-allocation, automatic no-show, transactional outbox + event bus (Kafka / RabbitMQ), Row-Level Security, waitlist, shift / closure management APIs, real SSO, physical microservice split |
 
 ---
@@ -64,7 +64,7 @@ Dealerships currently book service appointments manually. The goal is a backend 
 | B5 | Start times align to the slot grid inside workshop hours (dealership timezone). **`end_at ≤ closes_at`**; the buffer may extend past closing time. | `slot = 30`, `08:00–18:00` |
 | B6 | Booking window: `start_at ≥ now + lead_time` and `start_at ≤ now + horizon`. | `120 min`, `30 days` |
 | B7 | A vehicle cannot have two overlapping active appointments anywhere. | — |
-| B8 | A customer can hold at most N active appointments (prevents one customer from monopolising capacity). | `max_active_per_customer = 3` |
+| B8 | A customer can hold at most N active appointments across all dealerships (prevents monopolising capacity). Enforced globally via `pg_advisory_xact_lock(NS_CUSTOMER::int4, customer_id::int4)` before the dealership lock. | `max_active_per_customer = 3` |
 | B9 | `requires_approval = false` → appointment is **`CONFIRMED` immediately**; `true` → **`PENDING`** until staff approves. In both cases resources are **reserved at booking time**. | Seed: dealership A `false`, dealership B `true` |
 
 #### Seeded Service Catalog (Aligned to 30-Minute Grid with 15-Minute Buffer)
@@ -81,13 +81,19 @@ Dealerships currently book service appointments manually. The goal is a backend 
 | :--- | :--- |
 | L1 | **Customer edits** (`PENDING` / `CONFIRMED`, until `start_at − cancellation_cutoff`): `start_at`, `service_type_id`, `vehicle_id` (own vehicle), `technician_id` (must be qualified and free), `notes`. The current bay / technician are kept if still free for the new interval, otherwise re-allocated. |
 | L2 | At a `requires_approval` dealership, a customer change to time, service type, vehicle or technician returns a `CONFIRMED` appointment to `PENDING`; a notes-only change keeps the status. At auto-confirm dealerships the status stays `CONFIRMED`. |
-| L3 | **Staff reassignment** (`PENDING` / `CONFIRMED` / `CHECKED_IN`): staff may set a specific technician and / or bay if qualified and free; status is unchanged. |
+| L3 | **Staff reassignment & staff rescheduling** (`PENDING` / `CONFIRMED` / `CHECKED_IN`): Staff may reassign technician and/or bay (`POST /v1/staff/appointments/{id}/reassign`). For early arrival (Scenario A/B), staff may reschedule `start_at` (`POST /v1/staff/appointments/{id}/reschedule`) which **overrides customer lead_time and cancellation_cutoff**, validating under dealership advisory lock that both a free qualified technician and a free bay exist. Status is unchanged. |
 | L4 | **Cancellation** by the customer until `start_at − cancellation_cutoff` (default 120 min) is a **soft cancel** (`CANCELLED`, `cancelled_at`, `cancelled_by`, `cancel_reason`). Resources are released immediately because only active statuses occupy resources. |
 | L5 | **PENDING expiry (system job):** a `PENDING` appointment still not approved when `now ≥ start_at − cancellation_cutoff` becomes `EXPIRED` and releases its resources. This is the only automatic transition. |
 | L6 | Operational transitions (`CHECKED_IN → IN_PROGRESS → COMPLETED`, `NO_SHOW`) are **manual, staff-only, and only on the appointment day**. `NO_SHOW` is allowed only after `start_at + grace` (default 15 min). Future-dated appointments can only be edited, reassigned, swapped or cancelled. |
 | L7 | **Early Completion:** When staff mark an `IN_PROGRESS` appointment as `COMPLETED` ahead of `end_at`, its status leaves the occupying set immediately — releasing both its `ServiceBay` and `Technician` for the remainder of the scheduled window while keeping the planned `start_at / end_at` intact for SLA comparison. |
-| L8 | **Early Arrival & Slot Swap (3-Scenario Operational Rule):** If Customer 2 (booked at `10:00–11:00` with `Technician 1`) arrives at `08:00` while Customer 1's `08:00–09:00` booking on `Technician 1` / `Bay 1` has not yet arrived:<br/>1. **Scenario A — Move up using other free resources (before grace period expires):** Customer 1's `08:00–09:00` slot cannot be taken while within `grace_minutes`. Customer 2 can only be moved to `08:00–09:00` if **BOTH** another qualified `Technician` **AND** another free `ServiceBay` are available at `08:00–09:00` (preventing bay exhaustion).<br/>2. **Scenario B — After Grace Period (`08:15`):** Once `now ≥ start_at + grace_minutes` without Customer 1 arriving, staff mark Customer 1 `NO_SHOW` (releasing `Bay 1` and `Technician 1`) and move Customer 2 into the `08:00` slot.<br/>3. **Scenario C — Atomic Slot Swap (`POST /v1/staff/appointments/swap`):** If Customer 1 informs the dealership they will arrive late at `10:00` and agrees to trade slots, staff execute an atomic swap between the two appointments (validating skill compatibility, duration fit without colliding with adjacent bookings, and bay/technician availability). |
-| L9 | Statuses that occupy resources: `PENDING, CONFIRMED, CHECKED_IN, IN_PROGRESS`. |
+| L8 | **Early Arrival & Slot Swap (3-Scenario Operational Rule):** If Customer 2 (booked at `10:00–11:00` with `Technician 1`) arrives at `08:00` while Customer 1's `08:00–09:00` booking on `Technician 1` / `Bay 1` has not yet arrived:<br/>1. **Scenario A — Move up using other free resources (before grace period expires):** Customer 1's `08:00–09:00` slot cannot be taken while within `grace_minutes`. Staff call `POST /v1/staff/appointments/{customer2_id}/reschedule` to move Customer 2 to `08:00–09:00`. The system checks that **BOTH** another qualified `Technician` **AND** another free `ServiceBay` are available at `08:00–09:00` (preventing bay exhaustion).<br/>2. **Scenario B — After Grace Period (`08:15`):** Once `now ≥ start_at + grace_minutes` without Customer 1 arriving, staff mark Customer 1 `NO_SHOW` (releasing `Bay 1` and `Technician 1`) and call staff `reschedule` to move Customer 2 into the `08:00` slot with `Technician 1` and `Bay 1`.<br/>3. **Scenario C — Atomic Slot Swap (`POST /v1/staff/appointments/swap`):** If Customer 1 informs the dealership they will arrive late at `10:00` and agrees to trade slots, staff execute an atomic swap between the two appointments (validating skill compatibility, duration fit without colliding with adjacent bookings, and bay/technician availability). |
+| L9 | **Statuses that occupy resources:** `PENDING, CONFIRMED, CHECKED_IN, IN_PROGRESS`. *Note on `'SWAPPING'`:* `'SWAPPING'` is an internal, in-transaction transient state during atomic slot swap that temporarily leaves the partial GiST index; it is committed as `CONFIRMED` or `CHECKED_IN` before the transaction finishes and never persists. |
+
+#### Architectural Invariants
+1. **Lock Acquisition Order Invariant (Deadlock Prevention):** Whenever multiple locks are required, they MUST be acquired in this exact global hierarchy:
+   $$\text{Customer Advisory Lock} \longrightarrow \text{Dealership Advisory Lock} \longrightarrow \text{Appointment Row Locks (FOR UPDATE ordered by id ASC)}$$
+2. **Lock Invariant:** Every code path that **adds or shifts resource occupancy** (`create`, customer `edit`, staff `reassign`, staff `reschedule`, staff `swap`) MUST acquire `pg_advisory_xact_lock(NS_BOOKING::int4, dealership_id::int4)`. Code paths that **only release or keep occupancy within the existing window** (`approve`, `reject`, `cancel`, `check-in`, `start`, `complete`, `no-show`, worker `expire`) do NOT acquire the dealership advisory lock; they rely strictly on row-level optimistic locking (`version`).
+3. **Version Invariant:** **Every** write to `appointments` (customer edit, staff status transitions, `reassign`, `reschedule`, `swap`, and worker `expire`) MUST increment `version = version + 1`. This guarantees SSE clients and optimistic locks always detect stale representations.
 
 ---
 
@@ -114,14 +120,14 @@ source/
 
 | Monorepo Package | Nature & Boundary | Owns |
 | :--- | :--- | :--- |
-| **`@app/workshop`** (`libs/workshop`) | **Core business bounded context (Ownership domain)** — highest write load and concurrency | Skills, service types, service bays, technicians, unavailabilities, **workshop settings**, appointments, availability, allocation, lifecycle |
+| **`@app/workshop`** (`libs/workshop`) | **Core business bounded context (Ownership domain)** — highest write load and concurrency | Skills, service types, service bays, technicians, unavailabilities, **workshop settings (including timezone, hours, grid rules)**, appointments, availability, allocation, lifecycle |
 | **`@app/crm`** (`libs/crm`) | **Customer & Asset lifecycle domain (PII / GDPR boundary)** — high data growth; expands into Lead Management (Demand domain / Scenario C) and ownership history | Customers, vehicles, ownership |
-| **`@app/organization`** (`libs/organization`) | **Organizational & Tenant directory (Platform foundation)** — low rate of change, small dataset, shared across domains | Tenants, dealerships (identity, address, timezone), staff |
+| **`@app/organization`** (`libs/organization`) | **Organizational & Tenant directory (Platform foundation)** — low rate of change, small dataset, shared across domains | Tenants, dealerships (identity, address, primary timezone), staff |
 | **`@app/sso-mock`** (`libs/sso-mock`) | Infrastructure stand-in for an external IdP | OAuth clients, login identities, RSA signing keys (mounted only when `SSO_MOCK_ENABLED=true`) |
 | **`@app/contracts` & `@app/common`** | Shared contracts & infrastructure kernel | Cross-module interfaces/DTOs, JWT verification, `AsyncLocalStorage` context, Pino logging, response envelope, idempotency, audit subscriber |
 
 > **Key design decisions:**
-> 1. **Single-transaction booking hot path:** Bays, technicians, booking rules (`workshop_settings`) and appointments all live in `@app/workshop`. The booking hot path — *serialize per dealership → pick bay + technician → insert appointment* — stays inside **one library, one database, one ACID transaction**, with zero runtime dependency on `@app/organization`.
+> 1. **Single-transaction booking hot path & Zero Organization Reads:** Bays, technicians, booking rules and operational **`timezone`** all live directly in `workshop_settings` inside `@app/workshop`. The booking hot path — *serialize per customer & dealership → pick bay + technician → insert appointment* — stays inside **one library, one database, one ACID transaction**, with zero runtime dependency or cross-module reads to `@app/organization`.
 > 2. **Why `@app/crm` and `@app/organization` are NOT merged into a "Master Data" library:** In an automotive DMS, Customer/Vehicle data (high-growth PII & asset lifecycle) and Tenant/Dealership structure (low-churn organizational directory) have fundamentally different rates of change, compliance rules, and domain evolutions. Keeping them as distinct libraries in `libs/` prevents a "God Master Data" anti-pattern while costing zero runtime overhead.
 > 3. **Dedicated `apps/scheduler-worker` for Cron Safety:** Separating scheduled jobs (`@Cron`) into `apps/scheduler-worker` (deployed as a single replica and guarded by `pg_try_advisory_xact_lock`) allows `apps/scheduler-api` to scale horizontally to N pods without triggering duplicate cron executions.
 
@@ -141,6 +147,7 @@ source/
 flowchart TB
     subgraph Client["Client layer (stubbed)"]
         OAS["@nestjs/swagger OpenAPI UI (/docs/api)"]
+        DEMO["Live SSE Demo Views (/demo)<br/>1. Customer Screen | 2. Dealership & Technician Board"]
         CURL["cURL scripts + pre-issued tokens"]
     end
 
@@ -151,6 +158,7 @@ flowchart TB
             MW3["OidcJwtAuthGuard (jose JWKS)"]
             MW4["IdempotencyInterceptor"]
             RESP["ResponseEnvelopeInterceptor + GlobalExceptionFilter"]
+            SSE["@Sse() Stream Controllers<br/>(/v1/appointments/stream & /v1/staff/appointments/stream)"]
         end
 
         subgraph WorkerApp["apps/scheduler-worker (Single Replica)"]
@@ -161,7 +169,7 @@ flowchart TB
             SSO["@app/sso-mock<br/>(local/test only)"]
             ORG["@app/organization"]
             CRM["@app/crm"]
-            WS["@app/workshop<br/>Settings, Availability, Allocation, StateMachine"]
+            WS["@app/workshop<br/>Settings, Availability, Allocation, StateMachine, AppointmentStreamService"]
             CONTRACTS["@app/contracts (DI Tokens + DTOs)"]
         end
     end
@@ -170,6 +178,9 @@ flowchart TB
     LOG["Structured JSON logs (Pino stdout)"]
 
     OAS --> MW1
+    DEMO --> MW1
+    SSE -. "Server-Sent Events (real-time push)" .-> DEMO
+    WS -. "post-commit RxJS Subject" .-> SSE
     CURL --> MW1
     MW1 --> MW2 --> MW3 --> MW4
     MW4 --> ORG
@@ -278,6 +289,7 @@ erDiagram
     WORKSHOP_SETTINGS {
         bigint dealership_id PK
         bigint tenant_id
+        string timezone "replicated from dealership"
         time opens_at
         time closes_at
         int slot_minutes
@@ -364,7 +376,9 @@ erDiagram
 ```
 
 - **Audit columns:** `created_by`, `updated_by`, `cancelled_by` hold the JWT `sub` of the acting customer or staff member; `NULL` for system actions (the matching `appointment_events` row records `actor_type = system`). Automatically populated via a reusable TypeORM `AuditColumnsSubscriber` reading `actorSub` from `AsyncLocalStorage`.
-- Supporting tables: `idempotency_keys (subject, key, request_hash, status, response, expires_at)` with `UNIQUE(subject, key)`; mock SSO tables `sso_clients`, `sso_users`. `outbox_events` is P2.
+- Supporting tables:
+  - `idempotency_keys (subject, key, request_hash, status, locked_until, response, expires_at)` with `UNIQUE(subject, key)`: `status` is `'IN_PROGRESS'` or `'COMPLETED'`. While `IN_PROGRESS`, a short lease `locked_until = now() + interval '60 seconds'` prevents permanent deadlocks if the Node process crashes mid-flight. The transition to `'COMPLETED'` (with the serialized response JSON) is executed **within the same database transaction** as the appointment insert, making creation and idempotency completion 100% atomic.
+  - Mock SSO tables `sso_clients`, `sso_users`. `outbox_events` is P2.
 
 ### 5.1 Integrity constraints (PostgreSQL)
 
@@ -454,43 +468,60 @@ sequenceDiagram
 
     C->>MW: POST /v1/appointments {dealership_id, vehicle_id, service_type_id, start_at, technician_id?}
     MW->>MW: CorrelationId (AsyncLocalStorage), REQUEST_START log, OidcJwtAuthGuard
-    MW->>DB: INSERT idempotency_keys (IN_PROGRESS) - unique (subject, key)
+    MW->>DB: INSERT idempotency_keys (IN_PROGRESS, locked_until = now() + 60s) - UNIQUE(subject, key)
     MW->>UC: validated DTO + ActorContext
     UC->>CRM: findVehicleOwnedByCustomer() (returns snapshot data)
-    UC->>UC: compute end_at, occupied_until; validate hours, lead time, horizon
     UC->>DB: dataSource.transaction(async (manager) => { ... })
     UC->>DB: manager.query("SET LOCAL lock_timeout = '2s'; SET LOCAL statement_timeout = '5s'")
-    UC->>DB: manager.query("SELECT pg_advisory_xact_lock($1, $2)", [NS_BOOKING, dealershipId])
-    UC->>DB: check active-appointment limit, vehicle overlap (via manager)
-    UC->>DB: pick free bay + best-fit qualified technician (or requested technician) (via manager)
+    Note over UC,DB: Strict Lock Hierarchy (Case 6 Prevention & int4 Cast)
+    UC->>DB: manager.query("SELECT pg_advisory_xact_lock($1::int4, $2::int4)", [NS_CUSTOMER, customerId])
+    UC->>DB: manager.query("SELECT pg_advisory_xact_lock($1::int4, $2::int4)", [NS_BOOKING, dealershipId])
+    UC->>UC: Recompute time rules against DB clock (now >= start_at - lead_time, etc.)
+    UC->>DB: check active-appointment limit across all dealerships (under NS_CUSTOMER lock)
+    UC->>DB: check vehicle overlap & pick free bay + best-fit qualified technician (under NS_BOOKING lock)
     alt bay and technician found
         UC->>DB: manager.insert(Appointment) + manager.insert(AppointmentEvent)
-        UC->>DB: COMMIT (releases advisory lock)
+        Note over UC,DB: Atomic Idempotency Completion inside TX (Case 11)
+        UC->>DB: manager.update(IdempotencyKey, {status: 'COMPLETED', response: payload})
+        Note over UC,DB: Transactional Event Broadcast (Case 12)
+        UC->>DB: manager.query("SELECT pg_notify('appointment_events', $1)", [eventPayload])
+        UC->>DB: COMMIT (releases all advisory locks; triggers pg_notify to API listeners)
         UC-->>C: 201 {statusCode, errorCode: null, data: appointment}
     else no capacity
-        UC->>DB: ROLLBACK
-        UC-->>C: 409 SLOT_UNAVAILABLE + up to 3 alternatives
+        UC->>DB: ROLLBACK (releases locks; drops uncommitted pg_notify)
+        UC->>DB: DELETE FROM idempotency_keys (allows retry)
+        UC-->>C: 409 SLOT_UNAVAILABLE {reason: 'NO_FREE_BAY' | 'NO_QUALIFIED_TECHNICIAN', alternatives}
     end
-    MW->>DB: UPDATE idempotency_keys (COMPLETED, response)
     MW->>MW: REQUEST_END log (full response, duration_ms)
 ```
 
-> **Critical Node.js / TypeORM Connection-Pool Rule:** Because Node.js `pg` uses a connection pool, calling `this.repository.find()` outside the transaction's `EntityManager` would borrow a *different* connection from the pool that does not hold `pg_advisory_xact_lock` or `SET LOCAL lock_timeout`. Every query inside `CreateAppointmentUseCase`, `UpdateAppointmentUseCase`, `ReassignAppointmentUseCase`, and `SwapAppointmentsUseCase` **must execute exclusively through the transactional `manager: EntityManager`** passed by `dataSource.transaction()`.
+> **Critical Node.js / TypeORM Connection-Pool Rule:** Because Node.js `pg` uses a connection pool, calling `this.repository.find()` outside the transaction's `EntityManager` would borrow a *different* connection from the pool that does not hold `pg_advisory_xact_lock` or `SET LOCAL lock_timeout`. Every query inside `CreateAppointmentUseCase`, `UpdateAppointmentUseCase`, `ReassignAppointmentUseCase`, `RescheduleAppointmentUseCase`, and `SwapAppointmentsUseCase` **must execute exclusively through the transactional `manager: EntityManager`** passed by `dataSource.transaction()`.
 
 ### 7.3 Staff transition — `POST /v1/staff/appointments/{id}/approve` (header `If-Match: <version>`)
 1. `OidcJwtAuthGuard` + `@Roles('staff')` verify `actor_type = staff`; repository queries enforce `dealership_id = actor.dealershipId` (other dealerships' appointments return 404).
 2. `AppointmentStateMachine` checks the transition and its time rule.
 3. `UPDATE … SET status = $1, version = version + 1, updated_by = $2 WHERE id = $3 AND version = $4` — 0 affected rows → `409 VERSION_CONFLICT`.
-4. Insert `appointment_events` row; respond with the new representation and version.
+4. Insert `appointment_events` row; broadcast event via `pg_notify('appointment_events', ...)`; respond with the new representation and version.
 
-### 7.4 Customer edit / staff reassignment
-Inside `dataSource.transaction(async (manager) => { ... })`: acquire the dealership advisory lock, lock the appointment row (`FOR UPDATE`), verify `version`, then:
-- keep the current bay / technician if still free for the new interval, else re-allocate (best-fit), or validate the explicitly requested technician / bay (`409 TECHNICIAN_UNAVAILABLE` / `BAY_UNAVAILABLE` if not free; in Scenario A early arrival move-up, verify **both** a free bay and a free qualified technician exist);
-- refresh snapshots when the vehicle changes;
-- apply L2 (back to `PENDING` at approval dealerships) for customer changes; staff reassignment keeps the status.
+### 7.4 Customer edit, staff reassignment & staff rescheduling
+Inside `dataSource.transaction(async (manager) => { ... })`:
+1. **Acquire Locks in Strict Order:**
+   - For Customer Edit: `pg_advisory_xact_lock(NS_CUSTOMER::int4, customerId::int4)` $\to$ `pg_advisory_xact_lock(NS_BOOKING::int4, dealershipId::int4)`.
+   - For Staff Reassignment (`POST /v1/staff/appointments/{id}/reassign`) and Staff Reschedule (`POST /v1/staff/appointments/{id}/reschedule`): `pg_advisory_xact_lock(NS_BOOKING::int4, dealershipId::int4)`.
+2. Lock appointment row `FOR UPDATE`, verify `version`.
+3. **Staff Reschedule (`POST /v1/staff/appointments/{id}/reschedule` — Scenario A & B Early Arrival):**
+   - Allows staff to move `start_at` (e.g. from `10:00` to `08:00`) on the appointment day, **overriding customer `lead_time_minutes` and `cancellation_cutoff_minutes`**.
+   - Validates that **BOTH** a free `ServiceBay` and a free qualified `Technician` are available for the new interval `[start_at, occupied_until)`.
+   - Increments `version = version + 1`, logs `appointment_events`, calls `pg_notify('appointment_events', ...)`.
+4. **Customer Edit:**
+   - Keep current bay / technician if still free for new interval, else re-allocate (best-fit), or validate explicitly requested technician.
+   - Refresh snapshots if vehicle changed.
+   - Apply L2 (returns to `PENDING` at approval dealerships; keeps `CONFIRMED` at auto-confirm dealerships).
+5. **Staff Reassignment:**
+   - Swaps technician and/or bay if qualified and free; preserves status; increments `version = version + 1`.
 
 ### 7.5 PENDING expiry — `ExpirePendingAppointmentsCron` (`apps/scheduler-worker`, every 5 minutes)
-Runs in the single-replica `apps/scheduler-worker` process, acquires `pg_try_advisory_xact_lock(NS_CRON_EXPIRE)` for safety, selects `PENDING` appointments where `now ≥ start_at − cancellation_cutoff` (index `appointments_pending_expiry_idx`), sets `EXPIRED` with optimistic-lock semantics, and writes `appointment_events` with `actor_type = system`.
+Runs in the single-replica `apps/scheduler-worker` process, acquires `pg_try_advisory_xact_lock(NS_CRON_EXPIRE)` for safety, selects `PENDING` appointments where `now >= start_at - cancellation_cutoff` (index `appointments_pending_expiry_idx`), sets `EXPIRED` with optimistic-lock semantics (`version = version + 1`), writes `appointment_events` with `actor_type = system`, and executes `SELECT pg_notify('appointment_events', ...)` inside the transaction so all SSE clients across all API pods are notified immediately.
 
 ### 7.6 Atomic Slot Swap — `POST /v1/staff/appointments/swap`
 When an early-arriving customer (`Appointment B`, e.g. `10:00–11:00`) and a delayed customer (`Appointment A`, e.g. `08:00–09:00`) agree to exchange slots at the same dealership, `SwapAppointmentsUseCase` executes the swap atomically inside a single `dataSource.transaction()`:
@@ -504,16 +535,18 @@ sequenceDiagram
 
     Staff->>API: POST /v1/staff/appointments/swap {first_id, first_version, second_id, second_version}
     API->>DB: dataSource.transaction() + SET LOCAL lock_timeout = '2s'
-    API->>DB: SELECT pg_advisory_xact_lock(NS_BOOKING, dealership_id)
-    API->>DB: SELECT both appointments FOR UPDATE (ordered by id to prevent deadlock)
+    API->>DB: SELECT pg_advisory_xact_lock(NS_BOOKING::int4, dealership_id::int4)
+    API->>DB: SELECT both appointments FOR UPDATE (ordered by id ASC to prevent deadlock)
     API->>API: Verify both belong to staff's dealership, versions match, statuses in (PENDING, CONFIRMED, CHECKED_IN)
     API->>API: Compute swapped intervals [new_start_at, new_occupied_until) using each appointment's own duration + buffer
     API->>API: Verify both technicians hold required skills for the swapped service types & end_at <= closes_at
     API->>DB: Step 1: Temporarily set first appointment status = 'SWAPPING' (leaves partial GiST index)
-    API->>DB: Step 2: UPDATE second appointment to first's start_at, bay & technician (GiST verifies no 3rd-party overlap)
-    API->>DB: Step 3: UPDATE first appointment to second's start_at, bay, technician & restore status (GiST verifies no overlap)
+    API->>DB: Step 2: UPDATE second appointment to first's start_at, bay & technician, version = version + 1 (GiST verifies no 3rd-party overlap)
+    API->>DB: Step 3: UPDATE first appointment to second's start_at, bay, technician, restore status, version = version + 1 (GiST verifies no overlap)
     alt No overlap with adjacent appointments
-        API->>DB: INSERT 2 appointment_events (audit trail) & COMMIT
+        API->>DB: INSERT 2 appointment_events (audit trail)
+        API->>DB: SELECT pg_notify('appointment_events', ...) for both appointments
+        API->>DB: COMMIT (releases advisory lock; broadcasts SSE events)
         API-->>Staff: 200 OK {first_appointment, second_appointment}
     else Longer service duration collides with a 3rd appointment (SQLSTATE 23P01)
         API->>DB: ROLLBACK
@@ -521,7 +554,55 @@ sequenceDiagram
     end
 ```
 
-> **Why the 3-step `SWAPPING` update?** PostgreSQL does not allow `DEFERRABLE` on *partial* exclusion constraints (`WHERE status IN (...)`). Temporarily setting the first row's status to `'SWAPPING'` inside the serialized transaction removes it from the partial GiST index while the second row moves into its slot, and restoring its active status at the new slot triggers full GiST validation against all other appointments before `COMMIT`. Uncommitted states are never visible outside the transaction.
+> **Why the 3-step `SWAPPING` update?** While PostgreSQL allows `DEFERRABLE INITIALLY IMMEDIATE` constraints on non-partial indexes, using the transient `'SWAPPING'` status provides explicit, portable behavior with partial exclusion constraints (`WHERE status IN (...)`). Row 1 temporarily steps out of the partial GiST index while Row 2 moves into its slot; then Row 1 moves into Row 2's former slot with its active status restored, triggering PostgreSQL's GiST constraint checks against all external appointments before `COMMIT`. Both appointments increment `version = version + 1`. Uncommitted states are never visible outside the transaction.
+
+### 7.7 Real-Time Live Stream via PostgreSQL `LISTEN / NOTIFY` & SSE (Customer, Dealership & Technician Views)
+To ensure that appointments created or modified by a customer appear in real time on the **Dealership & Technician Board**, and that status changes or slot swaps performed by staff appear in real time on the **Customer Appointment Screen**, `@app/workshop` provides an `AppointmentStreamService` backed by **PostgreSQL `LISTEN / NOTIFY`** and exposed via NestJS `@Sse()` endpoints:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Customer Screen (/demo/customer)
+    participant API as apps/scheduler-api (@Sse Controller)
+    participant DB as PostgreSQL 18 (LISTEN/NOTIFY)
+    participant Worker as apps/scheduler-worker (Expire Cron)
+    actor D as Dealership & Technician Board (/demo/dealership)
+
+    Note over API,DB: API maintains dedicated LISTEN appointment_events connection
+    C->>API: GET /v1/appointments/stream (SSE subscribed for customer_id)
+    D->>API: GET /v1/staff/appointments/stream?technician_id= (SSE subscribed for dealership_id)
+    
+    rect rgb(240, 248, 255)
+    Note over C,DB: Booking Flow with Transactional NOTIFY
+    C->>API: POST /v1/appointments
+    API->>DB: BEGIN -> Locks -> Insert Appointment -> SELECT pg_notify('appointment_events', payload) -> COMMIT
+    DB-->>API: NOTIFY delivered only after COMMIT
+    API->>API: StreamService parses event, routes to RxJS Subject
+    API-->>D: SSE Event: APPOINTMENT_CREATED (Board updates instantly)
+    API-->>C: SSE Event: APPOINTMENT_CREATED (Customer screen updates instantly)
+    end
+
+    rect rgb(255, 245, 238)
+    Note over Worker,DB: Worker Expire Job (Cross-Process SSE Sync)
+    Worker->>DB: BEGIN -> Expire PENDING -> SELECT pg_notify('appointment_events', payload) -> COMMIT
+    DB-->>API: NOTIFY delivered to API listener connection across process boundary!
+    API->>API: StreamService forwards to RxJS Subject
+    API-->>D: SSE Event: APPOINTMENT_EXPIRED (Board removes expired booking)
+    API-->>C: SSE Event: APPOINTMENT_EXPIRED (Customer sees EXPIRED status)
+    end
+```
+
+1. **Transactional Post-Commit Guarantee via `pg_notify`:** Because PostgreSQL's `NOTIFY` is transactional, notifications are queued during the database transaction and **delivered strictly upon successful `COMMIT`**. If a transaction aborts or rolls back, PostgreSQL silently discards the notification — eliminating phantom events without complex application-level commit hooks.
+2. **Cross-Process & Multi-Pod Synchronization (Zero External Broker):**
+   - Events emitted by `apps/scheduler-worker` (e.g. `APPOINTMENT_EXPIRED`) are delivered via PostgreSQL's IPC directly to `apps/scheduler-api`.
+   - When `apps/scheduler-api` scales horizontally across multiple pods, every pod maintains a dedicated `LISTEN appointment_events` connection. An event committed on Pod A is instantly received by Pod B, Pod C, and all connected SSE clients without requiring Redis or RabbitMQ in the MVP!
+3. **Stale Event Protection via Monotonic `version`:**
+   - Every event payload includes the appointment's monotonic `version`.
+   - Client applications and demo screens discard any event where `payload.version <= current_local_appointment.version`, eliminating out-of-order SSE arrival race conditions.
+4. **Channel Scoping & Technician Filtering:**
+   - **Customer Stream (`GET /v1/appointments/stream`):** Authenticated customer receives only events where `event.customerId === actor.customerId`.
+   - **Dealership & Technician Stream (`GET /v1/staff/appointments/stream?technician_id=`):** Authenticated staff receive only events where `event.dealershipId === actor.dealershipId`. When `?technician_id=X` is supplied for a specific Technician's live board, the stream filters for `event.technicianId === X || event.previousTechnicianId === X` (so when an appointment is reassigned or swapped away from Technician X, Technician X's board immediately removes it while the new Technician's board immediately adds it).
+5. **Two Built-in Live Demo Screens (`/demo`):** Alongside Swagger UI (`/docs/api`), `apps/scheduler-api` serves a lightweight split-screen/dual-view web interface (`/demo` — **Customer Live Screen** & **Dealership + Technician Live Board**) connected via `EventSource` SSE so evaluators can watch bookings, status transitions, and slot swaps synchronize in real time across both screens.
 
 ---
 
@@ -529,18 +610,65 @@ sequenceDiagram
 
 | Risk | Mechanism |
 | :--- | :--- |
-| Two requests race for the same resources | **`pg_advisory_xact_lock(NS_BOOKING, dealership_id)`** executed on the transactional `EntityManager` as the first statement of every booking / edit / reassignment / swap transaction: allocation within one dealership is serialized. After acquiring the lock, each statement (`READ COMMITTED`) sees all previously committed bookings, so the bay / technician choice is always accurate. With 10 bays per dealership the serialized section is a few milliseconds. Different dealerships never block each other. |
-| Why not `FOR UPDATE SKIP LOCKED` on bay / technician rows | Row locks are not time-scoped: a 09:00 booking holding bay #1 would make a concurrent 14:00 booking skip bay #1 although it is free at 14:00 → **false `409`**. Rejected after design review. |
-| Node.js connection-pool interleaving | Every query in a transactional use case runs on the single `EntityManager` instance provided by `dataSource.transaction()`, guaranteeing that `SET LOCAL`, `pg_advisory_xact_lock`, reads, and writes share one physical connection. |
-| Application bug / unforeseen path | Exclusion constraints reject any overlap (`23P01`). Vehicle overlap across two dealerships (different locks) is caught here and mapped to `409 VEHICLE_ALREADY_BOOKED`. |
-| Lock waits | `SET LOCAL lock_timeout = '2s'`, `statement_timeout = '5s'`; on lock timeout (`55P03`) or deadlock (`40P01`) retry up to 2 times with exponential backoff + jitter, then `503`. |
-| Double submit / client retry | `Idempotency-Key` required on `POST /v1/appointments`. The key row is **inserted first** (`status = IN_PROGRESS`, committed) under `UNIQUE(subject, key)`; a concurrent duplicate gets `409 IDEMPOTENCY_IN_PROGRESS`; a later duplicate with the same body replays the stored response; same key with a different body → `422 IDEMPOTENCY_KEY_REUSED`. On 5xx the row is deleted so the client can retry. Keys expire after 24 h. |
-| Concurrent edit / status change on one appointment | Optimistic locking: `version` exposed as `ETag`; mutating requests require `If-Match`; stale → `409 VERSION_CONFLICT`. |
-| Capacity monopolised / slots held forever | `max_active_per_customer` (`409 ACTIVE_APPOINTMENT_LIMIT_REACHED`); PENDING expiry worker job; `@nestjs/throttler` rate limiting (`429 TOO_MANY_REQUESTS`). |
-| No capacity | `409 SLOT_UNAVAILABLE` with `data.reason` (`NO_FREE_BAY` / `NO_QUALIFIED_TECHNICIAN`) and **0–3 alternative slots** from a bounded search (rest of the day, then up to 7 days, never beyond the horizon). Empty → `DEALERSHIP_FULLY_BOOKED`. |
-| Overruns / late arrival / early arrival | Buffer absorbs small overruns; grace period before `NO_SHOW`; 3-scenario early arrival rule + atomic slot swap (`POST /v1/staff/appointments/swap`). Large-overrun downstream re-allocation is P2. |
+| **Two requests race for same resources (Same Dealership)** | **`pg_advisory_xact_lock(NS_BOOKING::int4, dealership_id::int4)`** executed on the transactional `EntityManager` as the first statement of every booking / edit / reassignment / reschedule / swap transaction: allocation within one dealership is serialized. After acquiring the lock, each statement (`READ COMMITTED`) sees all previously committed bookings, so the bay / technician choice is always accurate. With 10 bays per dealership the serialized section is a few milliseconds. Different dealerships never block each other. |
+| **Active-limit bypass across different dealerships (Case 6)** | If a customer concurrently books at Dealership A and Dealership B while already holding 2 active appointments, independent dealership locks would allow both to pass. **Fix:** Acquire **`pg_advisory_xact_lock(NS_CUSTOMER::int4, customer_id::int4)` BEFORE** the dealership lock. Counting active appointments across all dealerships under this lock guarantees strict enforcement of `max_active_per_customer = 3`. |
+| **Advisory Lock Parameter Types (`int4` vs `bigint`)** | PostgreSQL's 2-argument `pg_advisory_xact_lock(int4, int4)` strictly expects 32-bit integers, while IDs are `bigint`. All invocations explicitly cast parameters: `pg_advisory_xact_lock($1::int4, $2::int4)`. |
+| **Why not `FOR UPDATE SKIP LOCKED` on bay / technician rows** | Row locks are not time-scoped: a 09:00 booking holding bay #1 would make a concurrent 14:00 booking skip bay #1 although it is free at 14:00 $\to$ **false `409`**. Rejected after design review. |
+| **Node.js connection-pool interleaving & Pool Sizing (Case 13)** | Every query in a transactional use case runs on the single `EntityManager` instance provided by `dataSource.transaction()`. The PostgreSQL connection pool is explicitly configured (`extra: { max: 25, connectionTimeoutMillis: 3000, idleTimeoutMillis: 30000 }`), comfortably handling 20+ concurrent lock-waiting requests without pool exhaustion. Zero out-of-manager queries inside transactions (preventing pool self-deadlock). |
+| **Lock waits & Retry Policy (`55P03` / `40P01`)** | `SET LOCAL lock_timeout = '2s'`, `statement_timeout = '5s'`. On lock timeout (`55P03`) or deadlock (`40P01`), retry up to 2 times with exponential backoff + jitter wrapping the **entire `dataSource.transaction()` block**. Time-dependent checks (`lead_time`, `cancellation_cutoff`, `grace_minutes`) are re-evaluated against the DB clock **after** acquiring the lock. |
+| **Double submit / client retry & Process Crash (Case 11)** | `Idempotency-Key` required on `POST /v1/appointments`. Row is inserted with `status = 'IN_PROGRESS'` and a short 60s lease (`locked_until = now() + 60s`) outside the main TX. Concurrent duplicates get `409 IDEMPOTENCY_IN_PROGRESS`. If the process crashes mid-flight, retries after 60s safely reclaim the key. The final transition to `'COMPLETED'` (with response payload) is performed **inside the main transaction** alongside the appointment insert — guaranteeing atomic completion. On 5xx the row is deleted. |
+| **Cross-Process & Multi-Pod Real-Time Sync (Case 12)** | `apps/scheduler-worker` (cron job) and multi-pod `apps/scheduler-api` publish events via transactional **`SELECT pg_notify('appointment_events', payload)`**. Delivered strictly on `COMMIT` across process boundaries without Redis/RabbitMQ. Every event payload carries monotonic `version`; clients drop events with `event.version <= current.version` to prevent out-of-order race conditions. |
+| **Concurrent edit / status change on one appointment** | Optimistic locking: `version` exposed as `ETag`; mutating requests require `If-Match`; stale $\to$ `409 VERSION_CONFLICT`. |
+| **Application bug / unforeseen path** | Exclusion constraints reject any overlap (`23P01`). Vehicle overlap across two dealerships is caught here and mapped to `409 VEHICLE_ALREADY_BOOKED`. |
+| **No capacity & Deterministic Reason Evaluation (Case 2)** | `409 SLOT_UNAVAILABLE` evaluates reasons deterministically: if `free_bays == 0` returns `NO_FREE_BAY`; else if `free_technicians == 0` returns `NO_QUALIFIED_TECHNICIAN`. The payload includes both resource counts and **0–3 alternative slots** from a bounded search. Empty $\to$ `DEALERSHIP_FULLY_BOOKED`. |
+| **Overruns / late arrival / early arrival** | Buffer absorbs small overruns; grace period before `NO_SHOW`; 3-scenario early arrival rule (checking **both** Bay and Technician in Scenario A) + staff reschedule endpoint + atomic slot swap (`POST /v1/staff/appointments/swap`). |
 
-**Scaling note:** if one dealership's booking rate ever makes the per-dealership lock a bottleneck, the lock key can be narrowed to `(dealership_id, local date)` (an edit or swap across days acquires both keys in ascending date order).
+### 8.1 High-Concurrency Spike & Scaling Evolution (Handling 10,000+ Concurrent Requests)
+
+While the MVP design guarantees **100% data integrity** and eliminates double-booking via transactional advisory locks and GiST exclusion constraints, directly subjecting PostgreSQL to a **10,000 concurrent request spike (10k RPS)** would overwhelm both the application connection pool and the database engine:
+
+#### 1. Why Database Constraints Alone Cannot Absorb 10k RPS
+- **Storage Constraints are a Safety Net, Not a Shock-Absorber:** PostgreSQL exclusion constraints (`EXCLUDE USING gist`) and table-level validation guarantee zero overlapping bookings, but executing them requires opening a database transaction, acquiring physical lock buffers, and consuming disk I/O.
+- **Connection Pool Exhaustion:** With a TypeORM pool size of 25 connections, 10,000 simultaneous requests cause 9,975 requests to queue in Node.js process memory. This creates extreme heap pressure, event-loop latency, and triggers mass `connectionTimeoutMillis: 3000` failures (`500 / 503`).
+- **Advisory Lock Serial Queuing:** Within a single dealership, advisory locking serializes appointment allocations. At an average of 5ms per transaction, processing 1,000 requests takes 5 seconds. Because `lock_timeout = '2s'`, all requests queued beyond ~400 are aborted with SQLSTATE `55P03` (`lock_timeout`).
+- **PostgreSQL Context Switching & Rollback Storm:** Thousands of concurrent contending transactions cause severe CPU cache thrashing and memory exhaustion.
+
+#### 2. The 3-Tier Defense-in-Depth Funnel
+
+To sustain 10,000+ concurrent requests without database degradation, the system implements a funnel architecture that eliminates 98% of hopeless requests before they reach PostgreSQL:
+
+```mermaid
+flowchart TD
+    Req["10,000 Concurrent Booking Requests"] --> T1["Tier 1: Edge & Gateway Layer<br/>(Rate Limiting & Redis Idempotency)"]
+    T1 -- "Drop 3,000 bots/spam/retries" --> T2["Tier 2: Application Pre-check & Leveling<br/>(Redis Fast-Reject OR Message Queue)"]
+    T2 -- "Fast-reject 6,800 over-capacity requests (< 1ms)" --> T3["Tier 3: PostgreSQL Database Engine<br/>(Sharded Locks + PgBouncer)"]
+    T3 --> OK["~200 Committed Bookings (100% capacity)"]
+
+    subgraph T2Detail["Tier 2 Strategies"]
+        direction TB
+        A["Pattern A (Synchronous): Redis Atomic Capacity Counter<br/>(Lua script DECR remaining_capacity)"]
+        B["Pattern B (Asynchronous): Queue-based Leveling<br/>(202 Accepted -> RabbitMQ -> Worker -> SSE Push)"]
+    end
+```
+
+##### Tier 1: Edge & Gateway Layer (Fast Rejection)
+- **Token Bucket Rate Limiting:** Enforced per IP and per Customer via Redis / API Gateway (e.g. `@nestjs/throttler` or Cloudflare). Restricts each customer to at most 2 requests/sec, instantly dropping malicious bursts and accidental multi-clicks.
+- **Early Idempotency Fast-Path:** Incoming `Idempotency-Key` headers are verified in Redis via `SET key in_progress NX EX 60`. Concurrent duplicate submissions receive `409 IDEMPOTENCY_IN_PROGRESS` in under 0.5ms without executing a single SQL query.
+
+##### Tier 2: Application Layer (Capacity Fast-Reject & Queue Leveling)
+A 10-bay dealership operating 10 hours daily on a 30-minute grid has an absolute physical ceiling of **200 appointment slots per day**. In a 10,000-request flash spike, at least 9,800 requests are mathematically doomed to fail (`409 SLOT_UNAVAILABLE`). Two production patterns prevent these 9,800 requests from hitting the database:
+- **Pattern A — Synchronous Fast-Reject via Redis Atomic Counters:**
+  - Dealership slot availability counters are cached in Redis: `capacity:{dealership_id}:{date}:{slot}`.
+  - A Redis Lua script atomically decrements the counter. If the counter drops below zero, the script reverts the decrement and immediately returns `0` (Capacity Exhausted).
+  - The API immediately returns `409 SLOT_UNAVAILABLE` in `< 1ms`. Only the requests that successfully decrement the Redis counter are permitted to open a PostgreSQL transaction.
+- **Pattern B — Asynchronous Queue-Based Leveling (Flash-Sale / Ticketmaster Pattern):**
+  - Instead of blocking on synchronous database writes, the API validates the payload, enqueues the booking job into **RabbitMQ** (or Redis BullMQ), and returns `202 Accepted { "job_id": "..." }`.
+  - A controlled background worker pool consumes from the queue at a sustainable rate (e.g. 50–100 bookings/sec), writing cleanly to PostgreSQL without lock contention or pool exhaustion.
+  - The user's screen receives the final `CONFIRMED` or `409` notification in real time via the existing **Server-Sent Events (`GET /v1/appointments/stream`)** channel.
+
+##### Tier 3: Database Engine Optimization
+- **Sharded Date-Level Advisory Locks:** Narrowing the advisory lock key from `(NS_BOOKING, dealership_id)` to `(NS_BOOKING, hash(dealership_id, local_date))`. Requests booking different calendar days run fully concurrently without blocking each other.
+- **PgBouncer Transaction Pooling:** Deploying PgBouncer in front of PostgreSQL multiplexes thousands of incoming application connections into a stable, high-throughput pool of 30–50 dedicated database connections, eliminating connection-spike latency.
 
 ---
 
@@ -552,7 +680,7 @@ sequenceDiagram
 {
   "statusCode": 409,
   "errorCode": "SLOT_UNAVAILABLE",
-  "data": { "reason": "NO_QUALIFIED_TECHNICIAN", "alternatives": [] },
+  "data": { "reason": "NO_QUALIFIED_TECHNICIAN", "free_bays": 3, "free_technicians": 0, "alternatives": [] },
   "message": "Dealership is fully booked for the requested period",
   "meta": { "correlation_id": "6f1c…" }
 }
@@ -582,12 +710,16 @@ Implemented once in `@app/common` via `ResponseEnvelopeInterceptor` (for 2xx res
 | GET | `/v1/dealerships/{id}/technicians?service_type_id=&start_at=` | Customer |
 | POST | `/v1/appointments` (`Idempotency-Key`) | Customer |
 | GET | `/v1/appointments`, `/v1/appointments/{id}` | Customer (own only) |
+| GET | `/v1/appointments/stream` (`@Sse()` text/event-stream) | Customer (real-time live updates for own appointments via `pg_notify`) |
 | PATCH | `/v1/appointments/{id}` (`If-Match`) | Customer |
 | POST | `/v1/appointments/{id}/cancel` (`If-Match`) | Customer |
 | GET | `/v1/staff/appointments?date=&status=&page=` | Staff (own dealership) |
-| POST | `/v1/staff/appointments/{id}/reassign` (`If-Match`) | Staff |
-| POST | `/v1/staff/appointments/swap` | Staff (own dealership, optimistic versions in payload) |
+| GET | `/v1/staff/appointments/stream?technician_id=` (`@Sse()` text/event-stream) | Staff & Technician Board (real-time live updates via `pg_notify`) |
+| POST | `/v1/staff/appointments/{id}/reassign` (`If-Match`) | Staff (reassign technician / bay) |
+| POST | `/v1/staff/appointments/{id}/reschedule` (`If-Match`) | Staff (early arrival override: reschedule start_at, bay, technician) |
+| POST | `/v1/staff/appointments/swap` | Staff (own dealership, atomic slot swap) |
 | POST | `/v1/staff/appointments/{id}/{approve\|reject\|check-in\|start\|complete\|no-show}` (`If-Match`) | Staff |
+| GET | `/demo` (Customer Screen & Dealership/Technician Live Board) | Evaluator / Browser Demo |
 | GET | `/health/live`, `/health/ready` | Infrastructure |
 
 ---
@@ -648,7 +780,7 @@ Authentication is **fully delegated to an SSO identity provider**; the business 
 | :--- | :--- | :--- |
 | Unit | Interval / overlap rules, slot grid (`end_at ≤ closes_at`, buffer overflow, slot-grid alignment), state machine edges, best-fit ordering, PII log masking | **Jest**, pure TypeScript (no DB) |
 | Integration / E2E | Every endpoint: success, validation, `409` reasons + alternatives, approval vs auto-confirm, edits (vehicle / technician / time), reassignment, **atomic slot swap**, expiry cron, idempotency, optimistic locking, cross-dealership isolation, rate limit | **Jest + Supertest** against real PostgreSQL |
-| **Concurrency** | `Promise.all()` firing 20+ simultaneous HTTP requests against the live NestJS server: (1) same slot → `201` count ≤ capacity, zero overlapping bay/technician, rest get `409`; (2) **different** time slots concurrently → all succeed (regression test proving no false `409`) | Separate Jest concurrency spec using real pooled PostgreSQL connections (tables truncated between tests, **not** wrapped in a single rollback transaction) |
+| **Concurrency** | `Promise.all()` firing 20+ simultaneous HTTP requests against the live NestJS server: (1) same slot → `201` count ≤ capacity, zero overlapping bay/technician, rest get `409`; (2) **different** time slots concurrently → all succeed (regression test proving no false `409`); (3) **Case 6 Multi-Dealership Limit Race:** Customer with 2 active appointments simultaneously books at Dealership A and Dealership B → exactly 1 succeeds and the other gets `409 ACTIVE_APPOINTMENT_LIMIT_REACHED`, proving the global customer advisory lock prevents bypass. | Separate Jest concurrency spec using real pooled PostgreSQL connections (tables truncated between tests, **not** wrapped in a single rollback transaction) |
 | Architecture | Module boundaries: `@app/workshop` may only import `@app/contracts` and `@app/common`, never internal files of `@app/crm` or `@app/organization` | **`eslint-plugin-boundaries`** in CI (`npm run lint`) |
 
 ---
@@ -688,3 +820,5 @@ Google Antigravity was used as a design partner; the design was also reviewed in
 | 13 | Arbitrary `duration_minutes` on `ServiceType` + `15 min` buffer (e.g. `60 + 15 = 75 min`). | In multi-agent discussion (Business Analyst + Architect), we identified that non-grid-aligned occupied durations create **slot fragmentation (dead time)** on a 30-minute grid. | Enforced **Slot-Grid Alignment** (`(duration_minutes + buffer_minutes) % slot_minutes == 0`) so every booking aligns with the 30-minute grid. |
 | 14 | Early completion & early customer arrival (e.g. Customer 2 booked at `10:00` arrives at `08:00` while Customer 1 booked at `08:00` has not yet arrived). | I asked how to handle early completion, early arrival, and slot swapping without causing domino conflicts or overlooking bay exhaustion when switching technicians. | Designed a 3-scenario operational rule (checking **both** Bay and Technician in Scenario A) and `POST /v1/staff/appointments/swap` with a 3-step `SWAPPING` transition inside the dealership advisory lock. |
 | 15 | Switching stack from PHP Laravel (Apiato) to **NestJS Monorepo (`apps/` + `libs/`)**. | Evaluated Node.js event-loop & connection-pool differences when migrating the design to NestJS. | Introduced `AsyncLocalStorage` for request/audit context isolation, strict transactional `EntityManager` connection pinning for `pg_advisory_xact_lock`, `@LogSpan()` decorator, and a dedicated single-replica `apps/scheduler-worker` for cron jobs. |
+| 16 | Design covered real-time availability check on booking, but lacked real-time live push to Dealership, Technician, and Customer screens after booking/updates. | I asked how new appointments and status updates are displayed in real time to Dealership, Technician, and Customer views, and selected the leanest NestJS solution. | Added Post-Commit RxJS `Subject` + NestJS `@Sse()` streams (`GET /v1/appointments/stream` for Customer and `GET /v1/staff/appointments/stream?technician_id=` for Dealership & Technician) plus two lightweight live demo screens (`/demo`) showcasing instant two-way real-time synchronization. |
+| 17 | Adversarial concurrency review identified cross-dealership active-limit race (Case 6), advisory lock parameter typing (`bigint` vs `int4`), idempotency crash recovery (Case 11), worker/multi-pod SSE isolation (Case 12), connection pool sizing (Case 13), and missing staff reschedule endpoint. | Validated all findings in multi-agent review session (Architect + Dev). | Implemented customer advisory lock hierarchy (`customer -> dealership -> row`), `int4` casts, 60s lease + atomic transaction update for idempotency, PostgreSQL `LISTEN / NOTIFY` delivered upon `COMMIT` with monotonic event `version` ordering, explicit pool sizing (`max: 25`), staff `reschedule` endpoint for early arrival, replicated `timezone` in `workshop_settings`, and documented strict Lock and Version Invariants. |
