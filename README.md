@@ -62,17 +62,29 @@ docker compose up -d
 ```
 
 ### Step 3: Initialize Database (On-Demand)
-Database extensions, test database creation, schema migrations, and seed data are completely decoupled from `docker compose up` to give you complete control and prevent accidental overwrites:
+
+Database setup is split into three modular scripts under `docker/postgres/`:
+- **`01-init.sql`:** Enables the `btree_gist` extension and provisions the `scheduler_test` database.
+- **`02-schema.sql` (Pure DDL):** Creates relational tables, base audit columns, PostgreSQL 18 GiST exclusion constraints (`no_bay_overlap`, `no_technician_overlap`, `no_vehicle_overlap`), and composite indexes.
+- **`03-seed.sql` (Pure DML):** Populates operational configuration for Central Dealership (`Asia/Ho_Chi_Minh`, 08:00–18:00, 30m grid, 15m buffer), 4 technical skills, 3 standardized service types, 10 active service bays, 10 technicians with skill matrices, seed customer with 2 vehicles, and staff members.
+
+#### Running Database Scripts
+
+Scripts can be executed via the **Bash CLI helper** (`./scripts/db.sh`) or cross-platform **NPM scripts** (`scripts/run-sql.js`):
+
 ```bash
-# Option A: Full initialization & seed in one command (runs init -> schema -> seed)
+# Option A: Full initialization & seed in one command (runs 01-init -> 02-schema -> 03-seed)
 ./scripts/db.sh reset
 # (or using npm: npm run db:reset)
 
 # Option B: Run step-by-step
-./scripts/db.sh init     # Enables btree_gist extension and provisions scheduler_test database
-./scripts/db.sh schema   # Creates tables, GiST exclusion constraints, and indexes
-./scripts/db.sh seed     # Populates dealerships, bays, technicians, skills, customer & vehicles
+./scripts/db.sh init          # or: npm run db:init (extensions & scheduler_test database)
+./scripts/db.sh schema        # or: npm run db:schema (DDL tables, constraints & indexes)
+./scripts/db.sh seed          # or: npm run db:seed (DML reference seed data)
+./scripts/db.sh test-schema   # or: npm run db:test-schema (provision test database)
+./scripts/db.sh psql          # Open interactive psql console
 ```
+*(The script runner automatically detects the running Docker container `scheduler-postgres`, local `psql`, or falls back to Node.js)*.
 
 ### Step 4: Verify Service Health
 - **API Health Check (Liveness):**
@@ -111,65 +123,7 @@ Database extensions, test database creation, schema migrations, and seed data ar
 
 ---
 
-## 5. Database Management & Script Execution
-
-The database setup is split into three cleanly separated files located in `docker/postgres/`:
-
-- **`01-init.sql` (Database & Extension Setup):** Enables PostgreSQL extension `btree_gist` and creates dedicated `scheduler_test` database for concurrent test suites.
-- **`02-schema.sql` (Pure DDL):** Defines all relational tables, TypeORM base audit columns, PostgreSQL 18 GiST exclusion constraints (`no_bay_overlap`, `no_technician_overlap`, `no_vehicle_overlap`), idempotency keys, and performance composite indexes.
-- **`03-seed.sql` (Pure DML):** Populates operational configuration for Central Dealership (`Asia/Ho_Chi_Minh`, 08:00–18:00, 30m grid, 15m buffer), 4 technical skills, 3 standardized service types, 10 active service bays, 10 technicians with skill matrices, seed customer with 2 vehicles, and staff members.
-
-### Why Decoupled from `docker-compose.yml`?
-In `docker-compose.yml`, `postgres` container mounts **only** the persistent volume `postgres-data:/var/lib/postgresql/data`. No init scripts are mounted under `docker-entrypoint-initdb.d/`. All database provisioning, schema migrations, and seeds are **strictly run on-demand via scripts**, completely protecting existing data volumes from unexpected container startup mutations or race conditions.
-
-### Running Database Scripts
-
-You can execute database scripts using either the **Bash CLI helper** or **NPM scripts**:
-
-#### Method 1: Using the Bash CLI (`./scripts/db.sh`)
-The script automatically detects whether the Docker container `scheduler-postgres` is running. If running, it executes via `docker exec`; otherwise, it uses your local `psql` client or falls back to Node.js:
-
-```bash
-# 1. Initialize Extensions & Test Database:
-./scripts/db.sh init
-
-# 2. Apply Schema DDL:
-./scripts/db.sh schema
-
-# 3. Populate Seed Data:
-./scripts/db.sh seed
-
-# 4. Complete Reset (runs init -> schema -> seed):
-./scripts/db.sh reset
-
-# 5. Provision Test Database:
-./scripts/db.sh test-schema
-
-# 6. Open Interactive psql Console:
-./scripts/db.sh psql
-```
-
-#### Method 2: Using NPM Commands (Cross-Platform via Node.js Runner)
-```bash
-# Initialize extensions & test database
-npm run db:init
-
-# Apply schema
-npm run db:schema
-
-# Apply seed data
-npm run db:seed
-
-# Complete reset (init + schema + seed)
-npm run db:reset
-
-# Provision test database
-npm run db:test-schema
-```
-
----
-
-## 6. Unified Response Envelope
+## 5. Unified Response Envelope
 
 All API endpoints produce a consistent JSON envelope:
 
@@ -208,6 +162,6 @@ All API endpoints produce a consistent JSON envelope:
 
 ---
 
-## 7. Detailed System Design Documentation
+## 6. Detailed System Design Documentation
 - [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md) — Comprehensive technical architecture specification (v4).
 - [SYSTEM_DESIGN_VI.md](./SYSTEM_DESIGN_VI.md) — Detailed Vietnamese explanatory guide aligned 1-to-1 with the English design document.
