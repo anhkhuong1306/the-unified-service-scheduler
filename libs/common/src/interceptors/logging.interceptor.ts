@@ -37,6 +37,7 @@ export interface RequestStartLogPayload {
   route: string;
   user_id: string | null;
   actor_type: string;
+  action_type?: string;
   platform: string;
   payload: unknown;
 }
@@ -50,6 +51,8 @@ export interface RequestEndLogPayload {
   heap_used_bytes: number;
   response: unknown;
   exception: Record<string, unknown> | null;
+  method?: string;
+  route?: string;
 }
 
 /**
@@ -119,6 +122,8 @@ export class LoggingInterceptor implements NestInterceptor {
           effectiveResponse,
           durationMs,
           null,
+          startPayload.method,
+          startPayload.route,
         );
 
         this.emitLog(EVENT_REQUEST_END, endPayload as unknown as Record<string, unknown>);
@@ -139,6 +144,8 @@ export class LoggingInterceptor implements NestInterceptor {
           envelope,
           durationMs,
           exceptionMeta,
+          startPayload.method,
+          startPayload.route,
         );
 
         this.emitLog(EVENT_REQUEST_END, endPayload as unknown as Record<string, unknown>);
@@ -183,13 +190,16 @@ export class LoggingInterceptor implements NestInterceptor {
           ? request.query
           : request?.body ?? {};
 
+    const actorType = RequestContextService.getActorType();
+
     return {
       event: EVENT_REQUEST_START,
       correlation_id: correlationId,
       method,
       route,
       user_id: RequestContextService.getActorSub(),
-      actor_type: RequestContextService.getActorType(),
+      actor_type: actorType,
+      action_type: actorType,
       platform,
       payload: SensitiveDataMasker.maskData(combinedPayload),
     };
@@ -204,6 +214,8 @@ export class LoggingInterceptor implements NestInterceptor {
     rawResponseBody: unknown,
     durationMs: number,
     exceptionMeta: Record<string, unknown> | null = null,
+    method: string = 'GET',
+    route: string = '/',
   ): RequestEndLogPayload {
     const correlationId = RequestContextService.getCorrelationId();
     const errorCode = LoggingInterceptor.extractErrorCode(rawResponseBody);
@@ -221,6 +233,8 @@ export class LoggingInterceptor implements NestInterceptor {
       exception: exceptionMeta
         ? (SensitiveDataMasker.maskData(exceptionMeta) as Record<string, unknown>)
         : null,
+      method,
+      route,
     };
   }
 
@@ -270,12 +284,76 @@ export class LoggingInterceptor implements NestInterceptor {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 
+  /**
+   * Format human-readable multi-line log message for terminal display.
+   *
+   * Formats REQUEST_START:
+   * `Object: >>>>>> method: {method} - endpoint: {route} >>>>>> REQUEST_START >>>>>>`
+   * `======> user_id: {user_id} - action_type: {action_type} - platform: {platform}`
+   * `======> request: JSON.stringify(payload)`
+   *
+   * Formats REQUEST_END:
+   * `Object: >>>>>> method: {method} - endpoint: {route} >>>>>> REQUEST_END >>>>>>`
+   * `======> duration_ms: {duration_ms} - memory_usage: {heap_used_bytes} (MB)`
+   * `======> response: JSON.stringify(response)`
+   * `======> exception: {exception}` (only if present)
+   */
+  public static formatLogMessage(
+    event: string,
+    payload: Record<string, unknown>,
+  ): string {
+    if (event === EVENT_REQUEST_START) {
+      const method = (payload.method as string) ?? 'GET';
+      const route = (payload.route as string) ?? '/';
+      const userId = (payload.user_id as string | null) ?? 'null';
+      const actionType =
+        (payload.action_type as string) ??
+        (payload.actor_type as string) ??
+        'system';
+      const platform = (payload.platform as string) ?? 'unknown';
+      const requestPayload = JSON.stringify(payload.payload ?? {});
+
+      return (
+        `>>>>>> method: ${method} - endpoint: ${route} >>>>>> REQUEST_START >>>>>>\n` +
+        `======> user_id: ${userId} - action_type: ${actionType} - platform: ${platform}\n` +
+        `======> request: ${requestPayload}`
+      );
+    }
+
+    if (event === EVENT_REQUEST_END) {
+      const method = (payload.method as string) ?? 'GET';
+      const route = (payload.route as string) ?? '/';
+      const durationMs = payload.duration_ms ?? 0;
+      const heapUsedBytes = Number(payload.heap_used_bytes ?? 0);
+      const memoryMb = (heapUsedBytes / (1024 * 1024)).toFixed(2) + ' MB';
+      const responseStr = JSON.stringify(payload.response ?? null);
+
+      let message =
+        `>>>>>> method: ${method} - endpoint: ${route} >>>>>> REQUEST_END >>>>>>\n` +
+        `======> duration_ms: ${durationMs} - memory_usage: ${memoryMb}\n` +
+        `======> response: ${responseStr}`;
+
+      if (payload.exception !== null && payload.exception !== undefined) {
+        const exceptionStr =
+          typeof payload.exception === 'string'
+            ? payload.exception
+            : JSON.stringify(payload.exception);
+        message += `\n======> exception: ${exceptionStr}`;
+      }
+
+      return message;
+    }
+
+    return JSON.stringify(payload);
+  }
+
   private emitLog(event: string, payload: Record<string, unknown>): void {
     if (this.customSink) {
       this.customSink(event, payload);
       return;
     }
 
-    this.logger.log(payload);
+    const message = LoggingInterceptor.formatLogMessage(event, payload);
+    this.logger.log(message);
   }
 }

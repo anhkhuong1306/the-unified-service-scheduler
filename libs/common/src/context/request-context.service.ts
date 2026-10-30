@@ -87,6 +87,15 @@ export class RequestContextService {
     return RequestContextService.current().correlationId;
   }
 
+  /**
+   * Retrieve active correlation ID from AsyncLocalStorage store if present, without lazily
+   * generating a new store. Useful for loggers to avoid creating spurious stores at startup.
+   */
+  public static getActiveCorrelationId(): string | null {
+    const existing = RequestContextService.storage.getStore();
+    return existing?.correlationId ?? null;
+  }
+
   public static setCorrelationId(correlationId: string): void {
     const store = RequestContextService.current();
     const trimmed = correlationId.trim();

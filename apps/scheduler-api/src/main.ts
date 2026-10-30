@@ -2,6 +2,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import {
+  AppLogger,
   GlobalExceptionFilter,
   LoggingInterceptor,
   ResponseEnvelopeInterceptor,
@@ -12,10 +13,13 @@ const DEFAULT_API_PORT = 3000;
 const SWAGGER_DOCS_PATH = 'docs/api';
 
 async function bootstrap(): Promise<void> {
+  const appLogger = new AppLogger();
   const logger = new Logger('SchedulerApiBootstrap');
 
   try {
-    const app = await NestFactory.create(SchedulerApiModule);
+    const app = await NestFactory.create(SchedulerApiModule, {
+      logger: appLogger,
+    });
 
     app.useGlobalPipes(
       new ValidationPipe({

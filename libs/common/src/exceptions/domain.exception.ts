@@ -5,7 +5,10 @@ import {
   getErrorCodeHttpStatus,
 } from '../enums/error-code.enum';
 
-export type SlotUnavailableReason = 'NO_FREE_BAY' | 'NO_QUALIFIED_TECHNICIAN';
+export type SlotUnavailableReason =
+  | 'NO_FREE_BAY'
+  | 'NO_QUALIFIED_TECHNICIAN'
+  | 'SLOT_UNAVAILABLE';
 
 export const SLOT_REASON_NO_FREE_BAY: SlotUnavailableReason = 'NO_FREE_BAY';
 export const SLOT_REASON_NO_QUALIFIED_TECHNICIAN: SlotUnavailableReason =

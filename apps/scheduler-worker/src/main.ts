@@ -1,12 +1,16 @@
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { AppLogger } from '@app/common';
 import { SchedulerWorkerModule } from './scheduler-worker.module';
 
 async function bootstrap(): Promise<void> {
+  const appLogger = new AppLogger();
   const logger = new Logger('SchedulerWorkerBootstrap');
 
   try {
-    await NestFactory.createApplicationContext(SchedulerWorkerModule);
+    await NestFactory.createApplicationContext(SchedulerWorkerModule, {
+      logger: appLogger,
+    });
     logger.log(
       'scheduler-worker context initialized and cron schedules registered',
     );
