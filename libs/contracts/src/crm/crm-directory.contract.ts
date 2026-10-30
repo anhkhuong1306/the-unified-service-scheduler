@@ -44,4 +44,14 @@ export interface ICrmDirectoryContract {
     vehicleIds: readonly string[],
     tenantId?: string,
   ): Promise<VehicleSnapshotDto[]>;
+
+  listVehiclesByCustomerId(
+    customerId: string,
+    tenantId?: string,
+  ): Promise<VehicleSnapshotDto[]>;
+
+  listVehiclesByActorSub(
+    identitySubject: string,
+    tenantId?: string,
+  ): Promise<VehicleSnapshotDto[]>;
 }

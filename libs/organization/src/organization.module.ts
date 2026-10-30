@@ -1,15 +1,23 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ORGANIZATION_DIRECTORY_CONTRACT } from '@app/contracts';
+import { Dealership } from './dealership/dealership.entity';
+import { StaffMember } from './staff/staff-member.entity';
+import { OrganizationDirectoryService } from './organization-directory.service';
+import { DealershipService } from './dealership/dealership.service';
 
-/**
- * Organizational & Tenant Directory Bounded Context (`@app/organization`).
- *
- * Owns `tenant`, `dealership` (identity, address, IANA timezone), and `staff` records,
- * and provides the in-process implementation for `ORGANIZATION_DIRECTORY_CONTRACT`.
- */
+@Global()
 @Module({
-  imports: [],
+  imports: [TypeOrmModule.forFeature([Dealership, StaffMember])],
   controllers: [],
-  providers: [],
-  exports: [],
+  providers: [
+    OrganizationDirectoryService,
+    DealershipService,
+    {
+      provide: ORGANIZATION_DIRECTORY_CONTRACT,
+      useExisting: OrganizationDirectoryService,
+    },
+  ],
+  exports: [ORGANIZATION_DIRECTORY_CONTRACT, OrganizationDirectoryService, DealershipService, TypeOrmModule],
 })
 export class OrganizationModule {}

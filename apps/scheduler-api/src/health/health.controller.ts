@@ -5,6 +5,7 @@ import {
   ApiResponseEnvelope,
   DomainException,
   ErrorCode,
+  Public,
 } from '@app/common';
 
 export interface LivenessPayload {
@@ -25,6 +26,7 @@ export interface ReadinessPayload {
  */
 @ApiTags('Infrastructure Health')
 @Controller('health')
+@Public()
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);
 

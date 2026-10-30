@@ -1,15 +1,21 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { CRM_DIRECTORY_CONTRACT } from '@app/contracts';
+import { Customer } from './customer/customer.entity';
+import { Vehicle } from './vehicle/vehicle.entity';
+import { CrmDirectoryService } from './crm-directory.service';
 
-/**
- * Customer & Asset Lifecycle Bounded Context (`@app/crm`).
- *
- * Owns `customer` and `vehicle` records (PII / GDPR boundary) and provides
- * the in-process implementation for `CRM_DIRECTORY_CONTRACT`.
- */
+@Global()
 @Module({
-  imports: [],
+  imports: [TypeOrmModule.forFeature([Customer, Vehicle])],
   controllers: [],
-  providers: [],
-  exports: [],
+  providers: [
+    CrmDirectoryService,
+    {
+      provide: CRM_DIRECTORY_CONTRACT,
+      useExisting: CrmDirectoryService,
+    },
+  ],
+  exports: [CRM_DIRECTORY_CONTRACT, CrmDirectoryService, TypeOrmModule],
 })
 export class CrmModule {}
