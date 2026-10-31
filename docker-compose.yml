@@ -59,12 +59,30 @@ services:
     networks:
       - scheduler-network
 
+  redis:
+    image: redis:7-alpine
+    container_name: scheduler-redis
+    restart: unless-stopped
+    ports:
+      - "${FORWARD_REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - scheduler-network
+
 networks:
   scheduler-network:
     driver: bridge
 
 volumes:
   postgres-data:
+    driver: local
+  redis-data:
     driver: local
   node-modules:
     driver: local
