@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { CursorPaginationDto, CursorPaginationHelper, CursorPaginationMeta } from '@app/common';
 import { ServiceType } from './service-type.entity';
 
 @Injectable()
@@ -21,6 +22,24 @@ export class ServiceCatalogService {
       where: { tenantId },
       relations: ['skill'],
       order: { id: 'ASC' },
+    });
+  }
+
+  /**
+   * Retrieves active service types with cursor-based pagination.
+   */
+  public async listServiceTypesPaginated(
+    tenantId: string = '1',
+    cursorDto: CursorPaginationDto = {},
+  ): Promise<{ items: ServiceType[]; meta: CursorPaginationMeta }> {
+    const qb = this.serviceTypeRepo
+      .createQueryBuilder('serviceType')
+      .leftJoinAndSelect('serviceType.skill', 'skill')
+      .where('serviceType.tenant_id = :tenantId', { tenantId });
+
+    return CursorPaginationHelper.paginateQueryBuilder(qb, cursorDto, {
+      sortField: 'id',
+      sortOrder: 'ASC',
     });
   }
 

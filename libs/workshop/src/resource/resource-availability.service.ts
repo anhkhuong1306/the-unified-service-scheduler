@@ -7,6 +7,7 @@ import {
   ORGANIZATION_DIRECTORY_CONTRACT,
 } from '@app/contracts';
 import { WorkshopSettings } from '../settings/workshop-settings.entity';
+import { WorkshopCacheService } from '../cache/workshop-cache.service';
 import { ServiceType } from '../service-catalog/service-type.entity';
 import { CandidateSlot, SlotPolicy } from '../appointment/domain/slot-policy';
 import { AppointmentAvailabilityRepository } from '../appointment/repositories/appointment-availability.repository';
@@ -63,7 +64,21 @@ export class ResourceAvailabilityService {
     @Optional()
     @Inject(ORGANIZATION_DIRECTORY_CONTRACT)
     private readonly orgDirectory?: IOrganizationDirectoryContract,
+    @Optional()
+    private readonly workshopCache?: WorkshopCacheService,
   ) {}
+
+  private async loadSettings(dealershipId: string, tenantId: string): Promise<WorkshopSettings | null> {
+    if (this.workshopCache) {
+      const cached = await this.workshopCache.getSettings(dealershipId, tenantId);
+      if (cached) {
+        return cached;
+      }
+    }
+    return this.settingsRepo.findOne({
+      where: { dealershipId, tenantId },
+    });
+  }
 
   /**
    * Calculates slot availability, remaining capacity, and available technicians across a single calendar day
@@ -82,9 +97,7 @@ export class ResourceAvailabilityService {
     serviceTypeId: string,
     date: string,
   ): Promise<AvailabilityResponseDto> {
-    const settings = await this.settingsRepo.findOne({
-      where: { dealershipId, tenantId },
-    });
+    const settings = await this.loadSettings(dealershipId, tenantId);
     if (!settings) {
       throw new ResourceNotFoundException(
         `Workshop operational settings not found for dealership ${dealershipId}`,
@@ -165,9 +178,7 @@ export class ResourceAvailabilityService {
     date: string,
     serviceTypeId?: string,
   ): Promise<DealershipAvailableSlotsResponseDto> {
-    const settings = await this.settingsRepo.findOne({
-      where: { dealershipId, tenantId },
-    });
+    const settings = await this.loadSettings(dealershipId, tenantId);
     if (!settings) {
       throw new ResourceNotFoundException(
         `Workshop operational settings not found for dealership ${dealershipId}`,
@@ -325,9 +336,7 @@ export class ResourceAvailabilityService {
     serviceTypeId: string,
     startAtIso: string,
   ): Promise<SlotTechniciansResponseDto> {
-    const settings = await this.settingsRepo.findOne({
-      where: { dealershipId, tenantId },
-    });
+    const settings = await this.loadSettings(dealershipId, tenantId);
     if (!settings) {
       throw new ResourceNotFoundException(
         `Workshop operational settings not found for dealership ${dealershipId}`,

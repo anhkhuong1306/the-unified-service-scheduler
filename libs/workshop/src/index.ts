@@ -3,6 +3,7 @@ export * from './settings/workshop-settings.entity';
 export * from './service-catalog/skill.entity';
 export * from './service-catalog/service-type.entity';
 export * from './service-catalog/service-catalog.service';
+export * from './cache/workshop-cache.service';
 export * from './resource/service-bay.entity';
 export * from './resource/technician.entity';
 export * from './resource/technician-skill.entity';

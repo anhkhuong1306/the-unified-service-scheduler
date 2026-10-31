@@ -1,6 +1,6 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { RequestContextService } from '@app/common';
+import { ApiResponse, ApiResponseEnvelope, CursorPaginationDto, RequestContextService } from '@app/common';
 import { ServiceCatalogService, ServiceType } from '@app/workshop';
 
 @ApiTags('Service Catalog')
@@ -11,9 +11,12 @@ export class ServiceTypesController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List all active service types for the current tenant' })
-  public async listServiceTypes(): Promise<ServiceType[]> {
+  @ApiOperation({ summary: 'List all active service types for the current tenant with cursor pagination' })
+  public async listServiceTypes(
+    @Query() paginationDto: CursorPaginationDto,
+  ): Promise<ApiResponseEnvelope<ServiceType[]>> {
     const tenantId = String(RequestContextService.getTenantId() ?? 1);
-    return this.serviceCatalogService.listServiceTypes(tenantId);
+    const result = await this.serviceCatalogService.listServiceTypesPaginated(tenantId, paginationDto);
+    return ApiResponse.cursorPaginated(result.items, result.meta);
   }
 }

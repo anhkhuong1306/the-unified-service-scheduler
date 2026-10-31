@@ -7,11 +7,12 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { RequestContextService } from '@app/common';
+import { ApiResponse, ApiResponseEnvelope, CursorPaginationDto, RequestContextService } from '@app/common';
 import {
   Appointment,
   AppointmentService,
@@ -70,16 +71,19 @@ export class AppointmentsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List service appointments for the authenticated customer' })
-  public async list(): Promise<Appointment[]> {
+  @ApiOperation({ summary: 'List service appointments for the authenticated customer with cursor pagination' })
+  public async list(
+    @Query() paginationDto: CursorPaginationDto,
+  ): Promise<ApiResponseEnvelope<Appointment[]>> {
     const actorSub = RequestContextService.getActorSub() ?? 'a1111111-1111-1111-1111-111111111111';
     const tenantId = String(RequestContextService.getTenantId() ?? 1);
-    return this.appointmentService.listMyAppointments(actorSub, tenantId);
+    const result = await this.appointmentService.listMyAppointmentsPaginated(actorSub, tenantId, paginationDto);
+    return ApiResponse.cursorPaginated(result.items, result.meta);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get details of a specific service appointment' })
-  public async getById(@Param('id') id: string): Promise<Appointment> {
+  public async getById(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): Promise<Appointment> {
     const tenantId = String(RequestContextService.getTenantId() ?? 1);
     return this.appointmentService.getAppointmentById(id, undefined, tenantId);
   }
@@ -88,7 +92,7 @@ export class AppointmentsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cancel an existing service appointment' })
   public async cancel(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body('reason') reason?: string,
   ): Promise<Appointment> {
     const actorSub = RequestContextService.getActorSub() ?? 'a1111111-1111-1111-1111-111111111111';

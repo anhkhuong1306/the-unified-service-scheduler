@@ -1,25 +1,30 @@
 import {
   Controller,
   Get,
+  Optional,
   Param,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { RequestContextService } from '@app/common';
+import {
+  ApiResponse,
+  ApiResponseEnvelope,
+  CursorPaginationDto,
+  CursorPaginationHelper,
+  RequestContextService,
+} from '@app/common';
 import { Dealership, DealershipService } from '@app/organization';
 import {
   AvailabilityResponseDto,
   DealershipAvailableSlotsResponseDto,
   ResourceAvailabilityService,
   SlotTechniciansResponseDto,
+  WorkshopCacheService,
 } from '@app/workshop';
 
 /**
  * HTTP Controller handling Dealership discovery, slot availability queries,
- * and technician lookups for customer and staff booking flows.
- *
- * Adheres strictly to Clean Architecture: Pure HTTP Adapter with zero business logic
- * or direct database queries; delegates 100% of execution to dedicated application services.
+ * and technician lookups for customer and staff booking flows with cursor-based pagination.
  */
 @ApiTags('Dealerships')
 @Controller({ path: 'v1/dealerships' })
@@ -27,13 +32,18 @@ export class DealershipsController {
   public constructor(
     private readonly dealershipService: DealershipService,
     private readonly availabilityService: ResourceAvailabilityService,
+    @Optional()
+    private readonly workshopCache?: WorkshopCacheService,
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List all operational dealerships for the active tenant' })
-  public async listDealerships(): Promise<Dealership[]> {
+  @ApiOperation({ summary: 'List all operational dealerships for the active tenant with cursor pagination' })
+  public async listDealerships(
+    @Query() paginationDto: CursorPaginationDto,
+  ): Promise<ApiResponseEnvelope<Dealership[]>> {
     const tenantId = String(RequestContextService.getTenantId() ?? 1);
-    return this.dealershipService.listDealerships(tenantId);
+    const result = await this.dealershipService.listDealershipsPaginated(tenantId, paginationDto);
+    return ApiResponse.cursorPaginated(result.items, result.meta);
   }
 
   @Get(':id/available-slots')
@@ -86,26 +96,39 @@ export class DealershipsController {
   @Get(':id/technicians')
   @ApiOperation({
     summary:
-      'Query all qualified technicians free for a specific service type and slot start time, allowing customer selection',
+      'Query qualified technicians for a specific dealership (with optional slot filtering and cursor-based pagination)',
   })
-  @ApiQuery({ name: 'service_type_id', required: true, example: '1' })
+  @ApiQuery({ name: 'service_type_id', required: false, example: '1' })
   @ApiQuery({
     name: 'start_at',
-    required: true,
-    description: 'Service start timestamp in ISO 8601 UTC format',
+    required: false,
+    description: 'Optional service start timestamp in ISO 8601 UTC format',
     example: '2026-11-01T01:00:00.000Z',
   })
   public async getTechnicians(
     @Param('id') id: string,
-    @Query('service_type_id') serviceTypeId: string,
-    @Query('start_at') startAt: string,
-  ): Promise<SlotTechniciansResponseDto> {
+    @Query('service_type_id') serviceTypeId?: string,
+    @Query('start_at') startAt?: string,
+    @Query() paginationDto: CursorPaginationDto = {},
+  ): Promise<ApiResponseEnvelope<any[]>> {
     const tenantId = String(RequestContextService.getTenantId() ?? 1);
-    return this.availabilityService.getTechniciansForSlot(
-      tenantId,
-      id,
-      serviceTypeId,
-      startAt,
-    );
+
+    if (serviceTypeId && startAt) {
+      const slotResult = await this.availabilityService.getTechniciansForSlot(
+        tenantId,
+        id,
+        serviceTypeId,
+        startAt,
+      );
+      const paginated = CursorPaginationHelper.paginateArray(slotResult.technicians, paginationDto);
+      return ApiResponse.cursorPaginated(paginated.items, paginated.meta);
+    }
+
+    // When no slot filters are specified: list all dealership technicians from Redis Hash Cache / DB
+    const technicians = this.workshopCache
+      ? await this.workshopCache.getTechnicians(id, tenantId)
+      : [];
+    const paginated = CursorPaginationHelper.paginateArray(technicians, paginationDto);
+    return ApiResponse.cursorPaginated(paginated.items, paginated.meta);
   }
 }

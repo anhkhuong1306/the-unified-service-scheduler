@@ -23,6 +23,7 @@ import { CustomerResolverService } from './appointment/services/customer-resolve
 import { AppointmentAvailabilityRepository } from './appointment/repositories/appointment-availability.repository';
 import { ResourceAllocator } from './appointment/services/resource-allocator.service';
 import { AppointmentEventsService } from './appointment/services/appointment-events.service';
+import { WorkshopCacheService } from './cache/workshop-cache.service';
 
 const WORKSHOP_ENTITIES = [
   WorkshopSettings,
@@ -51,6 +52,7 @@ const WORKSHOP_SERVICES = [
   CreateAppointmentUseCase,
   CancelAppointmentUseCase,
   AppointmentService,
+  WorkshopCacheService,
 ];
 
 /**

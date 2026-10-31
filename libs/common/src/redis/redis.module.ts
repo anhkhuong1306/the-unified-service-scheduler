@@ -68,7 +68,7 @@ const ERROR_LOG_THROTTLE_MS = 30_000;
     RedisService,
   ],
   // Export REDIS_CLIENT for shared connections across modules (BullMQ, throttler, etc.)
-  exports: [RedisService],
+  exports: [RedisService, REDIS_CLIENT],
 })
 export class RedisModule implements OnModuleDestroy {
   public constructor(@Inject(REDIS_CLIENT) private readonly client: Redis) {}

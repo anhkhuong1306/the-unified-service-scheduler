@@ -54,4 +54,15 @@ export interface ICrmDirectoryContract {
     identitySubject: string,
     tenantId?: string,
   ): Promise<VehicleSnapshotDto[]>;
+
+  listVehiclesByActorSubPaginated(
+    identitySubject: string,
+    tenantId?: string,
+    cursorDto?: { cursor?: string; limit?: number },
+  ): Promise<{ items: VehicleSnapshotDto[]; meta: { limit: number; nextCursor: string | null; hasMore: boolean } }>;
+
+  listCustomersPaginated(
+    tenantId?: string,
+    cursorDto?: { cursor?: string; limit?: number },
+  ): Promise<{ items: CustomerSnapshotDto[]; meta: { limit: number; nextCursor: string | null; hasMore: boolean } }>;
 }

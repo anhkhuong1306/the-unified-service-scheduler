@@ -13,6 +13,9 @@ export interface ApiResponseMeta {
   page?: number;
   per_page?: number;
   total?: number;
+  limit?: number;
+  nextCursor?: string | null;
+  hasMore?: boolean;
   [key: string]: unknown;
 }
 
@@ -93,6 +96,29 @@ export class ApiResponse {
       page,
       per_page: perPage,
       total,
+      ...meta,
+    });
+  }
+
+  /**
+   * Build a cursor-paginated 200 OK response envelope.
+   */
+  public static cursorPaginated<T = unknown>(
+    items: T[],
+    paginationMeta: {
+      limit: number;
+      nextCursor: string | null;
+      hasMore: boolean;
+      total?: number;
+    },
+    message: string = DEFAULT_SUCCESS_MESSAGE,
+    meta: Record<string, unknown> = {},
+  ): ApiResponseEnvelope<T[]> {
+    return ApiResponse.build<T[]>(200, null, items, message, {
+      limit: paginationMeta.limit,
+      nextCursor: paginationMeta.nextCursor,
+      hasMore: paginationMeta.hasMore,
+      ...(paginationMeta.total !== undefined ? { total: paginationMeta.total } : {}),
       ...meta,
     });
   }
