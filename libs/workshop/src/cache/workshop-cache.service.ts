@@ -1,12 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { RedisService } from '@app/common';
-import { WorkshopSettings } from '../settings/workshop-settings.entity';
-import { Technician } from '../resource/technician.entity';
-import { ServiceBay } from '../resource/service-bay.entity';
+import { CACHE_TTL_ONE_DAY_SECONDS, RedisService } from '@app/common';
+import { WorkshopSettings } from '../settings/entities/workshop-settings.entity';
+import { Technician } from '../resource/entities/technician.entity';
+import { ServiceBay } from '../resource/entities/service-bay.entity';
+import { WorkshopSettingsRepository } from '../settings/repositories/workshop-settings.repository';
+import { TechnicianRepository } from '../resource/repositories/technician.repository';
+import { ServiceBayRepository } from '../resource/repositories/service-bay.repository';
 
-const CACHE_TTL_SECONDS = 86400; // 24 hours
+const CACHE_TTL_SECONDS = Number(process.env.REDIS_CACHE_TTL_SECONDS) || CACHE_TTL_ONE_DAY_SECONDS;
 
 @Injectable()
 export class WorkshopCacheService {
@@ -14,12 +15,9 @@ export class WorkshopCacheService {
 
   public constructor(
     private readonly redis: RedisService,
-    @InjectRepository(WorkshopSettings)
-    private readonly settingsRepo: Repository<WorkshopSettings>,
-    @InjectRepository(Technician)
-    private readonly technicianRepo: Repository<Technician>,
-    @InjectRepository(ServiceBay)
-    private readonly bayRepo: Repository<ServiceBay>,
+    private readonly settingsRepo: WorkshopSettingsRepository,
+    private readonly technicianRepo: TechnicianRepository,
+    private readonly bayRepo: ServiceBayRepository,
   ) {}
 
   public getSettingsKey(dealershipId: string, tenantId: string = '1'): string {
@@ -44,9 +42,7 @@ export class WorkshopCacheService {
       return cached;
     }
 
-    const dbEntity = await this.settingsRepo.findOne({
-      where: { dealershipId, tenantId },
-    });
+    const dbEntity = await this.settingsRepo.findByDealershipId(dealershipId, tenantId);
     if (dbEntity) {
       await this.redis.hset(key, 'config', dbEntity, CACHE_TTL_SECONDS);
     }
@@ -78,11 +74,7 @@ export class WorkshopCacheService {
       return cachedList;
     }
 
-    const dbEntities = await this.technicianRepo.find({
-      where: { dealershipId, tenantId, isActive: true },
-      relations: ['technicianSkills'],
-      order: { id: 'ASC' },
-    });
+    const dbEntities = await this.technicianRepo.findByDealership(dealershipId, tenantId);
 
     if (dbEntities.length > 0) {
       const payload: Record<string, Technician> = {};
@@ -108,10 +100,7 @@ export class WorkshopCacheService {
       return cached;
     }
 
-    const dbEntity = await this.technicianRepo.findOne({
-      where: { id: technicianId, dealershipId, tenantId },
-      relations: ['technicianSkills'],
-    });
+    const dbEntity = await this.technicianRepo.findById(technicianId, dealershipId, tenantId);
     if (dbEntity) {
       await this.redis.hset(key, technicianId, dbEntity, CACHE_TTL_SECONDS);
     }
@@ -135,10 +124,7 @@ export class WorkshopCacheService {
       return cachedList;
     }
 
-    const dbEntities = await this.bayRepo.find({
-      where: { dealershipId, tenantId, isActive: true },
-      order: { id: 'ASC' },
-    });
+    const dbEntities = await this.bayRepo.findByDealership(dealershipId, tenantId);
 
     if (dbEntities.length > 0) {
       const payload: Record<string, ServiceBay> = {};
@@ -164,9 +150,7 @@ export class WorkshopCacheService {
       return cached;
     }
 
-    const dbEntity = await this.bayRepo.findOne({
-      where: { id: bayId, dealershipId, tenantId },
-    });
+    const dbEntity = await this.bayRepo.findById(bayId, dealershipId, tenantId);
     if (dbEntity) {
       await this.redis.hset(key, bayId, dbEntity, CACHE_TTL_SECONDS);
     }

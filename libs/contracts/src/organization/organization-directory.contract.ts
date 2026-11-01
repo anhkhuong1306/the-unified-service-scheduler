@@ -11,6 +11,7 @@ export const ORGANIZATION_DIRECTORY_CONTRACT = Symbol(
 export interface DealershipDirectoryDto {
   readonly id: string;
   readonly tenantId: string;
+  readonly code: string;
   readonly name: string;
   readonly address: string;
   readonly timezone: string;

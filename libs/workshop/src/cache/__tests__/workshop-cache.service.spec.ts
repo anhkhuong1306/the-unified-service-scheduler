@@ -1,8 +1,8 @@
 import { WorkshopCacheService } from '../workshop-cache.service';
 import { RedisService } from '@app/common';
-import { WorkshopSettings } from '../../settings/workshop-settings.entity';
-import { Technician } from '../../resource/technician.entity';
-import { ServiceBay } from '../../resource/service-bay.entity';
+import { WorkshopSettings } from '../../settings/entities/workshop-settings.entity';
+import { Technician } from '../../resource/entities/technician.entity';
+import { ServiceBay } from '../../resource/entities/service-bay.entity';
 
 describe('WorkshopCacheService', () => {
   let cacheService: WorkshopCacheService;
@@ -22,17 +22,17 @@ describe('WorkshopCacheService', () => {
     };
 
     mockSettingsRepo = {
-      findOne: jest.fn(),
+      findByDealershipId: jest.fn(),
     };
 
     mockTechRepo = {
-      find: jest.fn(),
-      findOne: jest.fn(),
+      findByDealership: jest.fn(),
+      findById: jest.fn(),
     };
 
     mockBayRepo = {
-      find: jest.fn(),
-      findOne: jest.fn(),
+      findByDealership: jest.fn(),
+      findById: jest.fn(),
     };
 
     cacheService = new WorkshopCacheService(
@@ -65,20 +65,18 @@ describe('WorkshopCacheService', () => {
       const result = await cacheService.getSettings('10', '1');
 
       expect(mockRedis.hget).toHaveBeenCalledWith('tenant:1:dealership:10:settings', 'config');
-      expect(mockSettingsRepo.findOne).not.toHaveBeenCalled();
+      expect(mockSettingsRepo.findByDealershipId).not.toHaveBeenCalled();
       expect(result).toEqual(mockSettings);
     });
 
     it('should query PostgreSQL and warm Redis Hash on cache miss', async () => {
       mockRedis.hget!.mockResolvedValue(null);
-      mockSettingsRepo.findOne.mockResolvedValue(mockSettings);
+      mockSettingsRepo.findByDealershipId.mockResolvedValue(mockSettings);
 
       const result = await cacheService.getSettings('10', '1');
 
       expect(mockRedis.hget).toHaveBeenCalledWith('tenant:1:dealership:10:settings', 'config');
-      expect(mockSettingsRepo.findOne).toHaveBeenCalledWith({
-        where: { dealershipId: '10', tenantId: '1' },
-      });
+      expect(mockSettingsRepo.findByDealershipId).toHaveBeenCalledWith('10', '1');
       expect(mockRedis.hset).toHaveBeenCalledWith(
         'tenant:1:dealership:10:settings',
         'config',
@@ -104,21 +102,17 @@ describe('WorkshopCacheService', () => {
       const result = await cacheService.getTechnicians('10', '1');
 
       expect(mockRedis.hgetall).toHaveBeenCalledWith('tenant:1:dealership:10:technicians');
-      expect(mockTechRepo.find).not.toHaveBeenCalled();
+      expect(mockTechRepo.findByDealership).not.toHaveBeenCalled();
       expect(result).toHaveLength(2);
     });
 
     it('should fetch from DB and populate Redis Hash when cache is empty', async () => {
       mockRedis.hgetall!.mockResolvedValue({});
-      mockTechRepo.find.mockResolvedValue(mockTechnicians);
+      mockTechRepo.findByDealership.mockResolvedValue(mockTechnicians);
 
       const result = await cacheService.getTechnicians('10', '1');
 
-      expect(mockTechRepo.find).toHaveBeenCalledWith({
-        where: { dealershipId: '10', tenantId: '1', isActive: true },
-        relations: ['technicianSkills'],
-        order: { id: 'ASC' },
-      });
+      expect(mockTechRepo.findByDealership).toHaveBeenCalledWith('10', '1');
       expect(mockRedis.hmset).toHaveBeenCalledWith(
         'tenant:1:dealership:10:technicians',
         {
@@ -142,16 +136,16 @@ describe('WorkshopCacheService', () => {
       });
 
       const result = await cacheService.getBays('10', '1');
-      expect(mockBayRepo.find).not.toHaveBeenCalled();
+      expect(mockBayRepo.findByDealership).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
     });
 
     it('should query DB and warm cache when bays cache is empty', async () => {
       mockRedis.hgetall!.mockResolvedValue({});
-      mockBayRepo.find.mockResolvedValue(mockBays);
+      mockBayRepo.findByDealership.mockResolvedValue(mockBays);
 
       const result = await cacheService.getBays('10', '1');
-      expect(mockBayRepo.find).toHaveBeenCalled();
+      expect(mockBayRepo.findByDealership).toHaveBeenCalledWith('10', '1');
       expect(mockRedis.hmset).toHaveBeenCalledWith(
         'tenant:1:dealership:10:bays',
         { '101': mockBays[0] },

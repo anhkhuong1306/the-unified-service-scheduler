@@ -5,10 +5,14 @@ import {
   IdempotencyInProgressException,
   IdempotencyKeyReusedException,
 } from '@app/common';
-import { IdempotencyKey } from '../idempotency-key.entity';
+import { IdempotencyRepository } from '../repositories/idempotency.repository';
 
 @Injectable()
 export class IdempotencyService {
+  public constructor(
+    private readonly repo: IdempotencyRepository,
+  ) {}
+
   /**
    * Begins idempotency processing inside transaction.
    * Returns cached response if replay, or null if fresh request.
@@ -19,26 +23,12 @@ export class IdempotencyService {
     key: string,
     hash: string,
   ): Promise<{ id: string } | null> {
-    const inserted = await m.query<unknown[]>(
-      `INSERT INTO idempotency_keys (subject, key, request_hash, status, expires_at)
-       VALUES ($1, $2, $3, 'IN_PROGRESS', now() + interval '24 hours')
-       ON CONFLICT (subject, key) DO UPDATE
-         SET request_hash = EXCLUDED.request_hash,
-             status = 'IN_PROGRESS',
-             response = NULL,
-             expires_at = EXCLUDED.expires_at
-         WHERE idempotency_keys.expires_at < now()
-       RETURNING 1`,
-      [subject, key, hash],
-    );
-
-    if (inserted.length > 0) {
-      return null; // Fresh request
+    const isFresh = await this.repo.insertInProgress(m, subject, key, hash);
+    if (isFresh) {
+      return null;
     }
 
-    const existing = await m.findOneOrFail(IdempotencyKey, {
-      where: { subject, key },
-    });
+    const existing = await this.repo.findByKey(m, subject, key);
 
     if (existing.requestHash !== hash) {
       throw new IdempotencyKeyReusedException(
@@ -61,11 +51,7 @@ export class IdempotencyService {
     key: string,
     response: Record<string, unknown>,
   ): Promise<void> {
-    await m.update(
-      IdempotencyKey,
-      { subject, key },
-      { status: 'COMPLETED', response: response as any },
-    );
+    await this.repo.updateResponse(m, subject, key, response);
   }
 }
 

@@ -5,7 +5,7 @@ import {
   TechnicianUnavailableException,
 } from '@app/common';
 import { AppointmentAvailabilityRepository } from '../repositories/appointment-availability.repository';
-import { AllocationParams, AllocatedResources } from './resource-allocator.types';
+import { AllocationParams, AllocatedResources } from '../types/resource-allocator.types';
 
 export { AllocationParams, AllocatedResources };
 
@@ -37,7 +37,8 @@ export class ResourceAllocator {
 
     const technicianId = await this.availability.findFreeTechnicianId(m, {
       dealershipId: p.dealershipId,
-      skillId: p.skillId,
+      skillId: p.skillId ?? null,
+      skillIds: p.skillIds,
       requestedId: p.requestedTechnicianId,
       from: startAt,
       to: occupiedUntil,

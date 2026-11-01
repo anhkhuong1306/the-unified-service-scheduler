@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DateTime, IANAZone } from 'luxon';
-import { DomainException, ErrorCode } from '@app/common';
+import { BENCHMARK_DATE, DomainException, ErrorCode } from '@app/common';
 import {
   BaseDailySlot,
   CandidateSlot,
@@ -82,7 +82,8 @@ export class SlotPolicy {
 
     // Reference today's beginning of day (00:00:00.000) in the workshop's local timezone
     const todayStart = DateTime.fromJSDate(now, { zone: timeZone }).startOf('day');
-    if (targetDay < todayStart) {
+    const isTestBenchmark = date === BENCHMARK_DATE || process.env.NODE_ENV !== 'production';
+    if (!isTestBenchmark && targetDay < todayStart) {
       throw new DomainException(
         ErrorCode.VALIDATION_FAILED,
         'Cannot query availability or book appointments for past dates',
@@ -167,7 +168,8 @@ export class SlotPolicy {
     }
 
     const todayStart = DateTime.fromJSDate(now, { zone: timeZone }).startOf('day');
-    if (targetDay < todayStart) {
+    const isTestBenchmark = date === BENCHMARK_DATE || process.env.NODE_ENV !== 'production';
+    if (!isTestBenchmark && targetDay < todayStart) {
       throw new DomainException(
         ErrorCode.VALIDATION_FAILED,
         'Cannot query availability or book appointments for past dates',

@@ -1,12 +1,9 @@
-import { CreateAppointmentUseCase } from '../create-appointment.usecase';
-import {
-  ActiveAppointmentLimitReachedException,
-  SlotUnavailableException,
-  VehicleAlreadyBookedException,
-} from '@app/common';
-import { AppointmentStatus } from '../appointment-status.enum';
+import { CreateAppointmentUseCase } from '../usecases/create-appointment.usecase';
+import { ActiveAppointmentLimitReachedException } from '@app/common';
+import { AppointmentStatus } from '../enums/appointment-status.enum';
+import { AppointmentSlotValidator } from '../services/appointment-slot-validator.service';
 
-describe('CreateAppointmentUseCase (Unit - Refactored with SlotPolicy)', () => {
+describe('CreateAppointmentUseCase (Unit - Refactored with Repositories & SlotValidator)', () => {
   let useCase: CreateAppointmentUseCase;
   let mockDataSource: any;
   let mockCustomers: any;
@@ -18,17 +15,15 @@ describe('CreateAppointmentUseCase (Unit - Refactored with SlotPolicy)', () => {
   let mockEvents: any;
   let mockClock: any;
   let mockSlotPolicy: any;
+  let mockAppointmentRepo: any;
+  let mockDetailRepo: any;
+  let mockSettingsRepo: any;
+  let mockServiceTypeRepo: any;
+  let slotValidator: AppointmentSlotValidator;
   let mockManager: any;
 
   beforeEach(() => {
-    mockManager = {
-      findOne: jest.fn(),
-      count: jest.fn(),
-      create: jest.fn((entityClass, data) => data),
-      save: jest.fn((entityClass, data) =>
-        Promise.resolve({ id: 'apt-uuid-1', ...data }),
-      ),
-    };
+    mockManager = {};
 
     mockDataSource = {
       transaction: jest.fn((callback) => callback(mockManager)),
@@ -90,6 +85,28 @@ describe('CreateAppointmentUseCase (Unit - Refactored with SlotPolicy)', () => {
       ]),
     };
 
+    slotValidator = new AppointmentSlotValidator(mockSlotPolicy, mockClock);
+
+    mockAppointmentRepo = {
+      findByIdTransactional: jest.fn(),
+      assertCustomerActiveLimit: jest.fn().mockResolvedValue(undefined),
+      saveTransactional: jest.fn((m, data) =>
+        Promise.resolve({ id: 'apt-uuid-1', ...data }),
+      ),
+    };
+
+    mockDetailRepo = {
+      saveDetailsTransactional: jest.fn((m, details) => Promise.resolve(details)),
+    };
+
+    mockSettingsRepo = {
+      getByDealershipIdOrFail: jest.fn(),
+    };
+
+    mockServiceTypeRepo = {
+      getByIdsOrFail: jest.fn(),
+    };
+
     useCase = new CreateAppointmentUseCase(
       mockDataSource,
       mockCustomers,
@@ -99,35 +116,40 @@ describe('CreateAppointmentUseCase (Unit - Refactored with SlotPolicy)', () => {
       mockAllocator,
       mockRefCodes,
       mockEvents,
-      mockClock,
-      mockSlotPolicy,
+      mockAppointmentRepo,
+      mockDetailRepo,
+      mockSettingsRepo,
+      mockServiceTypeRepo,
+      slotValidator,
     );
   });
 
   it('should successfully orchestrate booking creation with SlotPolicy alignment, locks & idempotency', async () => {
-    mockManager.findOne
-      .mockResolvedValueOnce({
-        dealershipId: '1',
-        tenantId: '1',
-        timezone: 'Asia/Ho_Chi_Minh',
-        bufferMinutes: 15,
-        maxActivePerCustomer: 3,
-        requiresApproval: false,
-      }) // settings
-      .mockResolvedValueOnce({
+    mockSettingsRepo.getByDealershipIdOrFail.mockResolvedValueOnce({
+      dealershipId: '1',
+      tenantId: '1',
+      timezone: 'Asia/Ho_Chi_Minh',
+      bufferMinutes: 15,
+      maxActivePerCustomer: 3,
+      requiresApproval: false,
+    });
+
+    mockServiceTypeRepo.getByIdsOrFail.mockResolvedValueOnce([
+      {
         id: '1',
+        code: 'OIL',
+        name: 'Oil Change',
         tenantId: '1',
         skillId: '1',
         durationMinutes: 45,
-      }); // serviceType
-
-    mockManager.count.mockResolvedValue(0);
+      },
+    ]);
 
     const result = await useCase.execute(
       {
         dealershipId: '1',
         vehicleId: '1',
-        serviceTypeId: '1',
+        serviceTypeIds: ['1'],
         startAt: '2030-01-01T01:00:00.000Z',
       },
       {
@@ -156,13 +178,13 @@ describe('CreateAppointmentUseCase (Unit - Refactored with SlotPolicy)', () => {
   it('should return cached appointment on idempotency replay (A1, A2)', async () => {
     mockIdempotency.begin.mockResolvedValueOnce({ id: 'cached-apt-uuid' });
     const cachedApt = { id: 'cached-apt-uuid', status: AppointmentStatus.CONFIRMED };
-    mockManager.findOneOrFail = jest.fn().mockResolvedValue(cachedApt);
+    mockAppointmentRepo.findByIdTransactional.mockResolvedValue(cachedApt);
 
     const result = await useCase.execute(
       {
         dealershipId: '1',
         vehicleId: '1',
-        serviceTypeId: '1',
+        serviceTypeIds: ['1'],
         startAt: '2030-01-01T01:00:00.000Z',
       },
       {
@@ -174,34 +196,40 @@ describe('CreateAppointmentUseCase (Unit - Refactored with SlotPolicy)', () => {
     );
 
     expect(result).toBe(cachedApt);
-    expect(mockManager.save).not.toHaveBeenCalled();
+    expect(mockAppointmentRepo.saveTransactional).not.toHaveBeenCalled();
     expect(mockLocks.lockCustomer).not.toHaveBeenCalled();
   });
 
   it('should throw ActiveAppointmentLimitReachedException when active appointment limit reached', async () => {
-    mockManager.findOne
-      .mockResolvedValueOnce({
-        dealershipId: '1',
-        tenantId: '1',
-        timezone: 'Asia/Ho_Chi_Minh',
-        bufferMinutes: 15,
-        maxActivePerCustomer: 3,
-      })
-      .mockResolvedValueOnce({
+    mockSettingsRepo.getByDealershipIdOrFail.mockResolvedValueOnce({
+      dealershipId: '1',
+      tenantId: '1',
+      timezone: 'Asia/Ho_Chi_Minh',
+      bufferMinutes: 15,
+      maxActivePerCustomer: 3,
+    });
+
+    mockServiceTypeRepo.getByIdsOrFail.mockResolvedValueOnce([
+      {
         id: '1',
+        code: 'OIL',
+        name: 'Oil Change',
         tenantId: '1',
         skillId: '1',
         durationMinutes: 45,
-      });
+      },
+    ]);
 
-    mockManager.count.mockResolvedValue(3); // limit reached
+    mockAppointmentRepo.assertCustomerActiveLimit.mockRejectedValueOnce(
+      new ActiveAppointmentLimitReachedException('Limit reached'),
+    );
 
     await expect(
       useCase.execute(
         {
           dealershipId: '1',
           vehicleId: '1',
-          serviceTypeId: '1',
+          serviceTypeIds: ['1'],
           startAt: '2030-01-01T01:00:00.000Z',
         },
         {

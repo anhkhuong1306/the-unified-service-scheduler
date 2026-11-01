@@ -1,4 +1,4 @@
-import { WorkshopSettings } from '../../settings/workshop-settings.entity';
+import { WorkshopSettings } from '../../settings/entities/workshop-settings.entity';
 
 /**
  * Structure representing a candidate time slot on the workshop's operational slot grid.
