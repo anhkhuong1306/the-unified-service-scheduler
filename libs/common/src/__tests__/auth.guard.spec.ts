@@ -76,14 +76,10 @@ describe('AuthGuard (Unit - Global Authentication)', () => {
     expect(RequestContextService.getTenantId()).toBe(3);
   });
 
-  it('should fallback to default test customer if no credentials are provided in dev/test', () => {
+  it('should reject with 401 Unauthorized if no credentials are provided', () => {
     mockReflector.getAllAndOverride.mockReturnValue(false);
     const context = createMockContext({});
 
-    const canActivate = guard.canActivate(context);
-
-    expect(canActivate).toBe(true);
-    expect(RequestContextService.getActorSub()).toBe('a1111111-1111-1111-1111-111111111111');
-    expect(RequestContextService.getActorType()).toBe('customer');
+    expect(() => guard.canActivate(context)).toThrow('Missing authentication token or credentials');
   });
 });

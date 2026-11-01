@@ -1,5 +1,5 @@
 import { SlotPolicy, InvalidWorkshopSettingsException } from '../slot-policy';
-import { WorkshopSettings } from '../../../settings/workshop-settings.entity';
+import { WorkshopSettings } from '../../../settings/entities/workshop-settings.entity';
 import { DomainException } from '@app/common';
 
 describe('SlotPolicy (Unit - Section G7)', () => {

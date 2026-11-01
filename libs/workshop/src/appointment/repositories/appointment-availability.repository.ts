@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
-import { ACTIVE_STATUSES } from '../appointment.constants';
+import { ACTIVE_STATUSES } from '../types/appointment.constants';
 
 @Injectable()
 export class AppointmentAvailabilityRepository {
@@ -49,32 +49,43 @@ export class AppointmentAvailabilityRepository {
     m: EntityManager,
     p: {
       dealershipId: string;
-      skillId: string | null;
+      skillId?: string | null;
+      skillIds?: readonly (string | number)[];
       requestedId?: string;
       from: Date;
       to: Date;
     },
   ): Promise<string | null> {
+    const rawSkills = p.skillIds && p.skillIds.length > 0
+      ? p.skillIds.map(Number)
+      : p.skillId
+        ? [Number(p.skillId)]
+        : [];
+    const requiredSkillCount = rawSkills.length;
+
     const rows = await m.query<{ id: string }[]>(
       `SELECT t.id FROM technicians t
        WHERE t.dealership_id = $1 AND t.is_active = TRUE
          AND ($2::bigint IS NULL OR t.id = $2::bigint)
-         AND ($3::bigint IS NULL OR EXISTS (
-               SELECT 1 FROM technician_skills ts
-               WHERE ts.technician_id = t.id AND ts.skill_id = $3::bigint
-             ))
+         AND (
+           $3::int = 0 OR (
+             SELECT COUNT(DISTINCT ts.skill_id) FROM technician_skills ts
+             WHERE ts.technician_id = t.id AND ts.skill_id = ANY($4::bigint[])
+           ) = $3::int
+         )
          AND NOT EXISTS (
            SELECT 1 FROM appointments a
            WHERE a.technician_id = t.id
-             AND a.status = ANY($6::text[])
-             AND a.period && tstzrange($4::timestamptz, $5::timestamptz, '[)')
+             AND a.status = ANY($7::text[])
+             AND a.period && tstzrange($5::timestamptz, $6::timestamptz, '[)')
          )
        ORDER BY t.id ASC
        LIMIT 1`,
       [
         p.dealershipId,
         p.requestedId ? Number(p.requestedId) : null,
-        p.skillId ? Number(p.skillId) : null,
+        requiredSkillCount,
+        rawSkills,
         p.from.toISOString(),
         p.to.toISOString(),
         this.activeStatuses,

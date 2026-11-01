@@ -13,6 +13,7 @@ export interface RequestContextStore {
   tenantId: number | null;
   dealershipId: number | null;
   roles: string[];
+  language?: string;
 }
 
 export interface ActorContextPatch {
@@ -21,4 +22,5 @@ export interface ActorContextPatch {
   tenantId?: number | null;
   dealershipId?: number | null;
   roles?: string[];
+  language?: string;
 }

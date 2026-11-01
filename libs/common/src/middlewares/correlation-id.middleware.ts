@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, NestMiddleware } from '@nestjs/common';
+import { HEADER_ACCEPT_LANGUAGE } from '../constants/http-headers.constants';
 import {
   CORRELATION_ID_HEADER,
   CORRELATION_ID_RESPONSE_HEADER,
@@ -35,6 +36,10 @@ export class CorrelationIdMiddleware implements NestMiddleware {
       res.setHeader(CORRELATION_ID_RESPONSE_HEADER, correlationId);
     }
 
+    const rawLang = req?.headers?.[HEADER_ACCEPT_LANGUAGE];
+    const langHeader = Array.isArray(rawLang) ? rawLang[0] : rawLang;
+    const language = langHeader?.toLowerCase().includes('en') ? 'en' : 'vi';
+
     RequestContextService.run(
       {
         correlationId,
@@ -43,6 +48,7 @@ export class CorrelationIdMiddleware implements NestMiddleware {
         tenantId: null,
         dealershipId: null,
         roles: [],
+        language,
       },
       () => {
         next();

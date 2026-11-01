@@ -8,13 +8,15 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 CREATE TABLE IF NOT EXISTS dealerships (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL DEFAULT 1,
+    code VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
     address VARCHAR(500) NOT NULL,
     timezone VARCHAR(100) NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_dealership_tenant_code UNIQUE (tenant_id, code)
 );
 
 CREATE TABLE IF NOT EXISTS staff_members (
@@ -24,9 +26,9 @@ CREATE TABLE IF NOT EXISTS staff_members (
     identity_subject UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID,
+    updated_by VARCHAR(100),
     CONSTRAINT uq_staff_tenant_subject UNIQUE (tenant_id, identity_subject)
 );
 
@@ -35,14 +37,16 @@ CREATE TABLE IF NOT EXISTS customers (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL DEFAULT 1,
     identity_subject UUID NOT NULL,
+    code VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL,
     phone VARCHAR(50) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID,
-    CONSTRAINT uq_customer_tenant_subject UNIQUE (tenant_id, identity_subject)
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_customer_tenant_subject UNIQUE (tenant_id, identity_subject),
+    CONSTRAINT uq_customer_tenant_code UNIQUE (tenant_id, code)
 );
 
 CREATE TABLE IF NOT EXISTS vehicles (
@@ -55,9 +59,9 @@ CREATE TABLE IF NOT EXISTS vehicles (
     model VARCHAR(100) NOT NULL,
     year INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID,
+    updated_by VARCHAR(100),
     CONSTRAINT uq_vehicle_tenant_vin UNIQUE (tenant_id, vin)
 );
 
@@ -77,9 +81,9 @@ CREATE TABLE IF NOT EXISTS workshop_settings (
     requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
     max_active_per_customer INT NOT NULL DEFAULT 3,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID,
+    updated_by VARCHAR(100),
     CONSTRAINT ck_ws_slot CHECK (slot_minutes > 0),
     CONSTRAINT ck_ws_buffer CHECK (buffer_minutes >= 0),
     CONSTRAINT ck_ws_grace CHECK (grace_minutes >= 0),
@@ -97,9 +101,9 @@ CREATE TABLE IF NOT EXISTS skills (
     code VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID,
+    updated_by VARCHAR(100),
     CONSTRAINT uq_skill_tenant_code UNIQUE (tenant_id, code)
 );
 
@@ -111,9 +115,9 @@ CREATE TABLE IF NOT EXISTS service_types (
     name VARCHAR(255) NOT NULL,
     duration_minutes INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID,
+    updated_by VARCHAR(100),
     CONSTRAINT uq_service_type_tenant_code UNIQUE (tenant_id, code)
 );
 
@@ -125,9 +129,9 @@ CREATE TABLE IF NOT EXISTS service_bays (
     code VARCHAR(50) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID,
+    updated_by VARCHAR(100),
     CONSTRAINT uq_bay_dealership_code UNIQUE (dealership_id, code)
 );
 
@@ -135,12 +139,14 @@ CREATE TABLE IF NOT EXISTS technicians (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL DEFAULT 1,
     dealership_id BIGINT NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
+    code VARCHAR(50) NOT NULL,
     name VARCHAR(255) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_technician_dealership_code UNIQUE (dealership_id, code)
 );
 
 CREATE TABLE IF NOT EXISTS technician_skills (
@@ -149,9 +155,9 @@ CREATE TABLE IF NOT EXISTS technician_skills (
     technician_id BIGINT NOT NULL REFERENCES technicians(id) ON DELETE CASCADE,
     skill_id BIGINT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID,
+    updated_by VARCHAR(100),
     CONSTRAINT uq_tech_skill UNIQUE (technician_id, skill_id)
 );
 
@@ -164,6 +170,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     customer_id BIGINT NOT NULL REFERENCES customers(id),
     vehicle_id BIGINT NOT NULL REFERENCES vehicles(id),
     service_type_id BIGINT NOT NULL REFERENCES service_types(id),
+    service_type_ids BIGINT[] DEFAULT '{}',
     service_bay_id BIGINT NOT NULL REFERENCES service_bays(id),
     technician_id BIGINT NOT NULL REFERENCES technicians(id),
     customer_name VARCHAR(255) NOT NULL,
@@ -178,11 +185,11 @@ CREATE TABLE IF NOT EXISTS appointments (
     notes TEXT,
     cancel_reason VARCHAR(255),
     cancelled_at TIMESTAMPTZ,
-    cancelled_by UUID,
+    cancelled_by VARCHAR(100),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID,
+    created_by VARCHAR(100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by UUID
+    updated_by VARCHAR(100)
 );
 
 -- Exclusion constraints preventing double-booking
@@ -200,6 +207,26 @@ ALTER TABLE appointments DROP CONSTRAINT IF EXISTS no_vehicle_overlap;
 ALTER TABLE appointments ADD CONSTRAINT no_vehicle_overlap EXCLUDE USING gist
     (vehicle_id WITH =, period WITH &&)
     WHERE (status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'));
+
+-- 6.1 Appointment Details (Detail Items for Multi-Service Management & Full Transparency)
+CREATE TABLE IF NOT EXISTS appointment_details (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+    service_type_id BIGINT NOT NULL REFERENCES service_types(id),
+    code VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    duration_minutes INT NOT NULL,
+    price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    sequence_order INT NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100)
+);
+
+CREATE INDEX IF NOT EXISTS idx_appt_details_appt_id ON appointment_details (appointment_id);
+CREATE INDEX IF NOT EXISTS idx_appt_details_service_type_id ON appointment_details (service_type_id);
 
 -- 7. Appointment Events Audit Trail
 CREATE TABLE IF NOT EXISTS appointment_events (

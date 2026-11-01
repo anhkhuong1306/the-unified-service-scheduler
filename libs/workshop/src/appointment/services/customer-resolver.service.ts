@@ -9,7 +9,7 @@ import {
   ICrmDirectoryContract,
   VehicleSnapshotDto,
 } from '@app/contracts';
-import { ActorContext } from '../actor-context';
+import { ActorContext } from '../types/actor-context.interface';
 
 @Injectable()
 export class CustomerResolverService {

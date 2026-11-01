@@ -1,4 +1,5 @@
 import { RequestContextService } from '../context/request-context.service';
+import { OffsetPaginationMeta } from '../pagination/offset-paginated-response.dto';
 import {
   ErrorCode,
   getErrorCodeDefaultMessage,
@@ -13,6 +14,9 @@ export interface ApiResponseMeta {
   page?: number;
   per_page?: number;
   total?: number;
+  limit?: number;
+  nextCursor?: string | null;
+  hasMore?: boolean;
   [key: string]: unknown;
 }
 
@@ -93,6 +97,55 @@ export class ApiResponse {
       page,
       per_page: perPage,
       total,
+      ...meta,
+    });
+  }
+
+  /**
+   * Build an offset-paginated 200 OK response envelope directly from an offset-paginated result ({ items, meta }).
+   */
+  public static offsetPaginated<T = unknown>(
+    resultOrItems: { items: T[]; meta: OffsetPaginationMeta } | T[],
+    maybeMeta?: OffsetPaginationMeta,
+    message: string = DEFAULT_SUCCESS_MESSAGE,
+  ): ApiResponseEnvelope<T[]> {
+    if (resultOrItems && typeof resultOrItems === 'object' && 'items' in resultOrItems && 'meta' in resultOrItems) {
+      const { items, meta } = resultOrItems as { items: T[]; meta: OffsetPaginationMeta };
+      return ApiResponse.paginated(items, meta.page, meta.limit, meta.total, message, {
+        totalPages: meta.totalPages,
+        hasNext: meta.hasNext,
+        hasPrev: meta.hasPrev,
+      });
+    }
+
+    const items = resultOrItems as T[];
+    const meta = maybeMeta!;
+    return ApiResponse.paginated(items, meta.page, meta.limit, meta.total, message, {
+      totalPages: meta.totalPages,
+      hasNext: meta.hasNext,
+      hasPrev: meta.hasPrev,
+    });
+  }
+
+  /**
+   * Build a cursor-paginated 200 OK response envelope.
+   */
+  public static cursorPaginated<T = unknown>(
+    items: T[],
+    paginationMeta: {
+      limit: number;
+      nextCursor: string | null;
+      hasMore: boolean;
+      total?: number;
+    },
+    message: string = DEFAULT_SUCCESS_MESSAGE,
+    meta: Record<string, unknown> = {},
+  ): ApiResponseEnvelope<T[]> {
+    return ApiResponse.build<T[]>(200, null, items, message, {
+      limit: paginationMeta.limit,
+      nextCursor: paginationMeta.nextCursor,
+      hasMore: paginationMeta.hasMore,
+      ...(paginationMeta.total !== undefined ? { total: paginationMeta.total } : {}),
       ...meta,
     });
   }

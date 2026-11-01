@@ -1,18 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
-import { Appointment } from '../appointment.entity';
-import { AppointmentEvent } from '../appointment-event.entity';
-import { AppointmentStatus } from '../appointment-status.enum';
-import { ActorContext } from '../actor-context';
+import { Appointment } from '../entities/appointment.entity';
+import { AppointmentStatus } from '../enums/appointment-status.enum';
+import { ActorContext } from '../types/actor-context.interface';
+import { AppointmentEventRepository } from '../repositories/appointment-event.repository';
 
 @Injectable()
 export class AppointmentEventsService {
+  public constructor(
+    private readonly eventRepo: AppointmentEventRepository,
+  ) {}
+
   public async recordCreated(
     m: EntityManager,
     a: Appointment,
     actor: ActorContext,
   ): Promise<void> {
-    const event = m.create(AppointmentEvent, {
+    await this.eventRepo.saveEvent(m, {
       appointmentId: a.id,
       fromStatus: null,
       toStatus: a.status,
@@ -26,7 +30,6 @@ export class AppointmentEventsService {
         endAt: a.endAt.toISOString(),
       },
     });
-    await m.save(AppointmentEvent, event);
     await this.notify(m, 'APPOINTMENT_CREATED', a);
   }
 
@@ -36,7 +39,7 @@ export class AppointmentEventsService {
     fromStatus: AppointmentStatus,
     actor: ActorContext,
   ): Promise<void> {
-    const event = m.create(AppointmentEvent, {
+    await this.eventRepo.saveEvent(m, {
       appointmentId: a.id,
       fromStatus,
       toStatus: a.status,
@@ -46,7 +49,6 @@ export class AppointmentEventsService {
         cancelReason: a.cancelReason,
       },
     });
-    await m.save(AppointmentEvent, event);
     await this.notify(m, 'APPOINTMENT_CANCELLED', a);
   }
 
@@ -63,6 +65,6 @@ export class AppointmentEventsService {
       status: a.status,
       version: a.version,
     });
-    await m.query("SELECT pg_notify('appointment_events', $1)", [payload]);
+    await this.eventRepo.notifyChannel(m, 'appointment_events', payload);
   }
 }

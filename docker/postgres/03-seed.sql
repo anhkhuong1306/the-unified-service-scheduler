@@ -3,8 +3,8 @@
 \connect scheduler
 
 -- 1. Seed Central Dealership & Settings
-INSERT INTO dealerships (id, tenant_id, name, address, timezone)
-VALUES (1, 1, 'Central Dealership', '123 Innovation Way, Tech Park', 'Asia/Ho_Chi_Minh')
+INSERT INTO dealerships (id, tenant_id, code, name, address, timezone)
+VALUES (1, 1, 'DLR_CENTRAL_01', 'Central Dealership', '123 Innovation Way, Tech Park', 'Asia/Ho_Chi_Minh')
 ON CONFLICT (id) DO NOTHING;
 
 SELECT setval('dealerships_id_seq', (SELECT MAX(id) FROM dealerships));
@@ -78,8 +78,8 @@ END $$;
 DO $$
 BEGIN
     FOR i IN 1..10 LOOP
-        INSERT INTO technicians (tenant_id, dealership_id, name, is_active)
-        VALUES (1, 1, 'Technician ' || LPAD(i::text, 2, '0'), TRUE)
+        INSERT INTO technicians (tenant_id, dealership_id, code, name, is_active)
+        VALUES (1, 1, 'TECH-' || LPAD(i::text, 2, '0'), 'Technician ' || LPAD(i::text, 2, '0'), TRUE)
         ON CONFLICT DO NOTHING;
     END LOOP;
 END $$;
@@ -106,8 +106,8 @@ SELECT 1, t.id, 4 FROM technicians t WHERE t.id IN (9, 10)
 ON CONFLICT DO NOTHING;
 
 -- 6. Sample Customer & Registered Vehicles
-INSERT INTO customers (id, tenant_id, identity_subject, name, email, phone)
-VALUES (1, 1, 'a1111111-1111-1111-1111-111111111111', 'Nguyen Van A', 'customer1@example.com', '+84901234567')
+INSERT INTO customers (id, tenant_id, identity_subject, code, name, email, phone)
+VALUES (1, 1, 'a1111111-1111-1111-1111-111111111111', 'CUST_001', 'Nguyen Van A', 'customer1@example.com', '+84901234567')
 ON CONFLICT DO NOTHING;
 
 SELECT setval('customers_id_seq', (SELECT MAX(id) FROM customers));

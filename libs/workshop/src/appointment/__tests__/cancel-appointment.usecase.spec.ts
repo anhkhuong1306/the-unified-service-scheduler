@@ -1,23 +1,22 @@
-import { CancelAppointmentUseCase } from '../cancel-appointment.usecase';
+import { CancelAppointmentUseCase } from '../usecases/cancel-appointment.usecase';
 import {
   InvalidStateTransitionException,
   ResourceNotFoundException,
 } from '@app/common';
-import { AppointmentStatus } from '../appointment-status.enum';
+import { AppointmentStatus } from '../enums/appointment-status.enum';
 
-describe('CancelAppointmentUseCase (Unit - Refactored)', () => {
+describe('CancelAppointmentUseCase (Unit - Refactored with Repositories)', () => {
   let useCase: CancelAppointmentUseCase;
   let mockDataSource: any;
   let mockCustomers: any;
   let mockEvents: any;
   let mockClock: any;
+  let mockAppointmentRepo: any;
+  let mockSettingsRepo: any;
   let mockManager: any;
 
   beforeEach(() => {
-    mockManager = {
-      findOne: jest.fn(),
-      save: jest.fn((entityClass, data) => Promise.resolve(data)),
-    };
+    mockManager = {};
 
     mockDataSource = {
       transaction: jest.fn((callback) => callback(mockManager)),
@@ -35,11 +34,22 @@ describe('CancelAppointmentUseCase (Unit - Refactored)', () => {
       now: jest.fn().mockReturnValue(new Date('2030-01-01T08:00:00.000Z')),
     };
 
+    mockAppointmentRepo = {
+      findByIdWithLock: jest.fn(),
+      saveTransactional: jest.fn((m, data) => Promise.resolve(data)),
+    };
+
+    mockSettingsRepo = {
+      getByDealershipIdOrFail: jest.fn(),
+    };
+
     useCase = new CancelAppointmentUseCase(
       mockDataSource,
       mockCustomers,
       mockEvents,
       mockClock,
+      mockAppointmentRepo,
+      mockSettingsRepo,
     );
   });
 
@@ -53,12 +63,11 @@ describe('CancelAppointmentUseCase (Unit - Refactored)', () => {
       cancel: jest.fn().mockReturnValue(AppointmentStatus.CONFIRMED),
     };
 
-    mockManager.findOne
-      .mockResolvedValueOnce(mockAppt) // find appointment with pessimistic lock
-      .mockResolvedValueOnce({
-        dealershipId: '1',
-        cancellationCutoffMinutes: 120, // 2 hours
-      }); // settings
+    mockAppointmentRepo.findByIdWithLock.mockResolvedValueOnce(mockAppt);
+    mockSettingsRepo.getByDealershipIdOrFail.mockResolvedValueOnce({
+      dealershipId: '1',
+      cancellationCutoffMinutes: 120, // 2 hours
+    });
 
     const result = await useCase.execute('apt-1', 'Personal reasons', {
       actorSub: 'sub-user-1',
@@ -68,6 +77,7 @@ describe('CancelAppointmentUseCase (Unit - Refactored)', () => {
 
     expect(result).toBeDefined();
     expect(mockAppt.cancel).toHaveBeenCalled();
+    expect(mockAppointmentRepo.saveTransactional).toHaveBeenCalled();
     expect(mockEvents.recordCancelled).toHaveBeenCalled();
   });
 
@@ -79,7 +89,7 @@ describe('CancelAppointmentUseCase (Unit - Refactored)', () => {
       status: AppointmentStatus.CONFIRMED,
     };
 
-    mockManager.findOne.mockResolvedValueOnce(mockAppt);
+    mockAppointmentRepo.findByIdWithLock.mockResolvedValueOnce(mockAppt);
 
     await expect(
       useCase.execute('apt-other', 'Cancel attempt', {
@@ -99,12 +109,11 @@ describe('CancelAppointmentUseCase (Unit - Refactored)', () => {
       startAt: new Date('2030-01-01T08:30:00.000Z'), // only 30 mins away
     };
 
-    mockManager.findOne
-      .mockResolvedValueOnce(mockAppt)
-      .mockResolvedValueOnce({
-        dealershipId: '1',
-        cancellationCutoffMinutes: 120, // cutoff is 2 hours before start!
-      });
+    mockAppointmentRepo.findByIdWithLock.mockResolvedValueOnce(mockAppt);
+    mockSettingsRepo.getByDealershipIdOrFail.mockResolvedValueOnce({
+      dealershipId: '1',
+      cancellationCutoffMinutes: 120, // cutoff is 2 hours before start!
+    });
 
     await expect(
       useCase.execute('apt-1', 'Late cancellation', {

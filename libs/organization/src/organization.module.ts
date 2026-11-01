@@ -1,16 +1,17 @@
 import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ORGANIZATION_DIRECTORY_CONTRACT } from '@app/contracts';
-import { Dealership } from './dealership/dealership.entity';
-import { StaffMember } from './staff/staff-member.entity';
-import { OrganizationDirectoryService } from './organization-directory.service';
-import { DealershipService } from './dealership/dealership.service';
+import { Dealership, StaffMember } from './entities';
+import { OrganizationDirectoryService, DealershipService } from './services';
+import { DealershipRepository, StaffRepository } from './repositories';
 
 @Global()
 @Module({
   imports: [TypeOrmModule.forFeature([Dealership, StaffMember])],
   controllers: [],
   providers: [
+    DealershipRepository,
+    StaffRepository,
     OrganizationDirectoryService,
     DealershipService,
     {
@@ -18,6 +19,13 @@ import { DealershipService } from './dealership/dealership.service';
       useExisting: OrganizationDirectoryService,
     },
   ],
-  exports: [ORGANIZATION_DIRECTORY_CONTRACT, OrganizationDirectoryService, DealershipService, TypeOrmModule],
+  exports: [
+    ORGANIZATION_DIRECTORY_CONTRACT,
+    OrganizationDirectoryService,
+    DealershipService,
+    DealershipRepository,
+    StaffRepository,
+    TypeOrmModule,
+  ],
 })
 export class OrganizationModule {}
