@@ -122,6 +122,16 @@ export class RequestContextService {
     return [...RequestContextService.current().roles];
   }
 
+  public static getLanguage(): 'vi' | 'en' {
+    const lang = RequestContextService.current().language?.toLowerCase();
+    return lang === 'en' ? 'en' : 'vi';
+  }
+
+  public static setLanguage(language: string): void {
+    const store = RequestContextService.current();
+    store.language = language;
+  }
+
   public static setActor(actor: ActorContextPatch): void {
     const store = RequestContextService.current();
 

@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   Optional,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
@@ -66,8 +67,7 @@ export class AuthGuard implements CanActivate {
     }
 
     if (!actorSub) {
-      // Default to seeded test customer if in development/test environment
-      actorSub = 'a1111111-1111-1111-1111-111111111111';
+      throw new UnauthorizedException('Missing authentication token or credentials');
     }
 
     RequestContextService.setActor({

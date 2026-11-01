@@ -38,6 +38,7 @@ export class CursorPaginationHelper {
       sortField?: string;
       sortOrder?: 'ASC' | 'DESC';
       idField?: string;
+      idType?: 'string' | 'number' | 'uuid';
     } = {},
   ): Promise<{ items: T[]; meta: CursorPaginationMeta }> {
     const limit = Math.min(Math.max(Number(cursorDto.limit) || 20, 1), 100);
@@ -49,6 +50,13 @@ export class CursorPaginationHelper {
     if (cursorDto.cursor) {
       const decoded = this.decode(cursorDto.cursor);
       const operator = sortOrder === 'ASC' ? '>' : '<';
+
+      if (options.idType === 'uuid') {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(decoded.id)) {
+          throw new BadRequestException('Invalid cursor format: ID must be a valid UUID');
+        }
+      }
 
       if (sortField === idField) {
         qb.andWhere(`${alias}.${idField} ${operator} :cursorId`, {
@@ -77,29 +85,36 @@ export class CursorPaginationHelper {
     // Fetch limit + 1 to detect hasMore without a separate COUNT(*) query
     qb.take(limit + 1);
 
-    const results = await qb.getMany();
-    const hasMore = results.length > limit;
-    const items = hasMore ? results.slice(0, limit) : results;
+    try {
+      const results = await qb.getMany();
+      const hasMore = results.length > limit;
+      const items = hasMore ? results.slice(0, limit) : results;
 
-    let nextCursor: string | null = null;
-    if (hasMore && items.length > 0) {
-      const lastItem = items[items.length - 1];
-      const lastId = String(lastItem[idField]);
-      const lastSortVal = sortField !== idField ? lastItem[sortField] : undefined;
-      nextCursor = this.encode({
-        id: lastId,
-        sortValue: lastSortVal,
-      });
+      let nextCursor: string | null = null;
+      if (hasMore && items.length > 0) {
+        const lastItem = items[items.length - 1];
+        const lastId = String(lastItem[idField]);
+        const lastSortVal = sortField !== idField ? lastItem[sortField] : undefined;
+        nextCursor = this.encode({
+          id: lastId,
+          sortValue: lastSortVal,
+        });
+      }
+
+      return {
+        items,
+        meta: {
+          limit,
+          nextCursor,
+          hasMore,
+        },
+      };
+    } catch (error: any) {
+      if (error?.code === '22P02' || error?.message?.includes('invalid input syntax for type uuid')) {
+        throw new BadRequestException('Invalid cursor format: ID must be a valid UUID');
+      }
+      throw error;
     }
-
-    return {
-      items,
-      meta: {
-        limit,
-        nextCursor,
-        hasMore,
-      },
-    };
   }
 
   /**

@@ -16,9 +16,10 @@ export abstract class BaseAuditEntity {
   })
   public created_at!: Date;
 
-  /** JWT `sub` of the acting customer or staff member; `null` for system actions. */
+  /** Identifier (code, username, or sub) of the acting customer or staff member; `null` for system actions. */
   @Column({
-    type: 'uuid',
+    type: 'varchar',
+    length: 100,
     name: 'created_by',
     nullable: true,
     default: null,
@@ -32,12 +33,29 @@ export abstract class BaseAuditEntity {
   })
   public updated_at!: Date;
 
-  /** JWT `sub` of the acting customer or staff member; `null` for system actions. */
+  /** Identifier (code, username, or sub) of the acting customer or staff member; `null` for system actions. */
   @Column({
-    type: 'uuid',
+    type: 'varchar',
+    length: 100,
     name: 'updated_by',
     nullable: true,
     default: null,
   })
   public updated_by!: string | null;
+
+  public get createdBy(): string | null {
+    return this.created_by;
+  }
+
+  public set createdBy(value: string | null) {
+    this.created_by = value;
+  }
+
+  public get updatedBy(): string | null {
+    return this.updated_by;
+  }
+
+  public set updatedBy(value: string | null) {
+    this.updated_by = value;
+  }
 }

@@ -1,4 +1,5 @@
 import { RequestContextService } from '../context/request-context.service';
+import { OffsetPaginationMeta } from '../pagination/offset-paginated-response.dto';
 import {
   ErrorCode,
   getErrorCodeDefaultMessage,
@@ -97,6 +98,32 @@ export class ApiResponse {
       per_page: perPage,
       total,
       ...meta,
+    });
+  }
+
+  /**
+   * Build an offset-paginated 200 OK response envelope directly from an offset-paginated result ({ items, meta }).
+   */
+  public static offsetPaginated<T = unknown>(
+    resultOrItems: { items: T[]; meta: OffsetPaginationMeta } | T[],
+    maybeMeta?: OffsetPaginationMeta,
+    message: string = DEFAULT_SUCCESS_MESSAGE,
+  ): ApiResponseEnvelope<T[]> {
+    if (resultOrItems && typeof resultOrItems === 'object' && 'items' in resultOrItems && 'meta' in resultOrItems) {
+      const { items, meta } = resultOrItems as { items: T[]; meta: OffsetPaginationMeta };
+      return ApiResponse.paginated(items, meta.page, meta.limit, meta.total, message, {
+        totalPages: meta.totalPages,
+        hasNext: meta.hasNext,
+        hasPrev: meta.hasPrev,
+      });
+    }
+
+    const items = resultOrItems as T[];
+    const meta = maybeMeta!;
+    return ApiResponse.paginated(items, meta.page, meta.limit, meta.total, message, {
+      totalPages: meta.totalPages,
+      hasNext: meta.hasNext,
+      hasPrev: meta.hasPrev,
     });
   }
 

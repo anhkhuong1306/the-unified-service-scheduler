@@ -20,6 +20,7 @@ import {
   ErrorCode,
   getErrorCodeDefaultMessage,
 } from '../enums/error-code.enum';
+import { getUserMessage } from '../i18n/user-messages.catalog';
 import { DomainException } from '../exceptions/domain.exception';
 import {
   ENVELOPE_LOCALS_KEY,
@@ -54,9 +55,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof DomainException) {
       const statusCode = exception.getHttpStatus();
+      const lang = RequestContextService.getLanguage();
+      const userMessage = getUserMessage(exception.getErrorCode(), lang, exception.message);
       const envelope = ApiResponse.error(
         exception.getErrorCode(),
-        exception.message,
+        userMessage,
         statusCode,
         exception.getDetails(),
       );
@@ -72,10 +75,24 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       };
     }
 
-    if (
-      exception instanceof BadRequestException ||
-      exception instanceof UnprocessableEntityException
-    ) {
+    if (exception instanceof BadRequestException) {
+      const responseBody = exception.getResponse();
+      const validationDetails = GlobalExceptionFilter.extractValidationDetails(responseBody);
+      const message = GlobalExceptionFilter.extractHttpExceptionMessage(
+        exception,
+        getErrorCodeDefaultMessage(ErrorCode.VALIDATION_FAILED),
+      );
+
+      const envelope = ApiResponse.error(
+        ErrorCode.VALIDATION_FAILED,
+        message,
+        400,
+        validationDetails,
+      );
+      return { statusCode: 400, envelope, exceptionMeta };
+    }
+
+    if (exception instanceof UnprocessableEntityException) {
       const responseBody = exception.getResponse();
       const validationDetails = GlobalExceptionFilter.extractValidationDetails(responseBody);
       const message = GlobalExceptionFilter.extractHttpExceptionMessage(
