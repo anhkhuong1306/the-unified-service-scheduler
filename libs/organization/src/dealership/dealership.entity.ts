@@ -9,6 +9,9 @@ export class Dealership extends BaseAuditEntity {
   @Column({ type: 'bigint', name: 'tenant_id', default: 1 })
   public tenantId!: string;
 
+  @Column({ type: 'varchar', length: 50, unique: true })
+  public code!: string;
+
   @Column({ type: 'varchar', length: 255 })
   public name!: string;
 

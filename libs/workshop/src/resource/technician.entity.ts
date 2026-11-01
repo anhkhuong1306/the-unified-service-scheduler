@@ -13,6 +13,9 @@ export class Technician extends BaseAuditEntity {
   @Column({ type: 'bigint', name: 'dealership_id' })
   public dealershipId!: string;
 
+  @Column({ type: 'varchar', length: 50 })
+  public code!: string;
+
   @Column({ type: 'varchar', length: 255 })
   public name!: string;
 

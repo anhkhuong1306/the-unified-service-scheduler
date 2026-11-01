@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  OneToMany,
   PrimaryGeneratedColumn,
   VersionColumn,
 } from 'typeorm';
@@ -8,6 +9,7 @@ import { BaseAuditEntity, InvalidStateTransitionException } from '@app/common';
 import { AppointmentStatus } from './appointment-status.enum';
 import { ACTIVE_STATUSES } from './appointment.constants';
 import { ActorContext } from './actor-context';
+import { AppointmentDetail } from './appointment-detail.entity';
 
 @Entity({ name: 'appointments' })
 export class Appointment extends BaseAuditEntity {
@@ -31,6 +33,37 @@ export class Appointment extends BaseAuditEntity {
 
   @Column({ type: 'bigint', name: 'service_type_id' })
   public serviceTypeId!: string;
+
+  @Column({ type: 'bigint', array: true, nullable: true, name: 'service_type_ids', default: '{}' })
+  public serviceTypeIds?: string[];
+
+  @OneToMany(() => AppointmentDetail, (item) => item.appointment, {
+    cascade: true,
+  })
+  public details?: AppointmentDetail[];
+
+  public get services(): AppointmentDetail[] | undefined {
+    return this.details;
+  }
+
+  public set services(items: AppointmentDetail[] | undefined) {
+    this.details = items;
+  }
+
+  // Rich Master Entities Detail Hydration (Boss Directives)
+  public dealership?: { id: string; code: string; name: string };
+  public customer?: { id: string; code: string; name: string; email?: string; phone?: string };
+  public technician?: { id: string; code: string; name: string };
+  public serviceBay?: { id: string; code: string };
+  public vehicle?: {
+    id: string;
+    licensePlate: string;
+    make: string;
+    model: string;
+    year: number;
+    vin?: string;
+    vehicleLabel?: string;
+  };
 
   @Column({ type: 'bigint', name: 'service_bay_id' })
   public serviceBayId!: string;
@@ -75,8 +108,16 @@ export class Appointment extends BaseAuditEntity {
   @Column({ type: 'timestamptz', nullable: true, name: 'cancelled_at' })
   public cancelledAt!: Date | null;
 
-  @Column({ type: 'uuid', nullable: true, name: 'cancelled_by' })
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'cancelled_by' })
   public cancelledBy!: string | null;
+
+  public get cancelled_by(): string | null {
+    return this.cancelledBy;
+  }
+
+  public set cancelled_by(value: string | null) {
+    this.cancelledBy = value;
+  }
 
   /**
    * Domain method: transitions active appointment to CANCELLED (B6, E8).
@@ -101,8 +142,9 @@ export class Appointment extends BaseAuditEntity {
         ? 'Customer requested cancellation'
         : 'Cancelled by staff');
     this.cancelledAt = now;
-    this.cancelledBy = actor.actorSub;
-    this.updated_by = actor.actorSub;
+    const actorIdentifier = actor.actorCode || actor.actorName || actor.actorSub;
+    this.cancelledBy = actorIdentifier;
+    this.updated_by = actorIdentifier;
 
     return fromStatus;
   }

@@ -14,6 +14,9 @@ export class Customer extends BaseAuditEntity {
   @Column({ type: 'uuid', name: 'identity_subject' })
   public identitySubject!: string;
 
+  @Column({ type: 'varchar', length: 50 })
+  public code!: string;
+
   @Column({ type: 'varchar', length: 255 })
   public name!: string;
 
