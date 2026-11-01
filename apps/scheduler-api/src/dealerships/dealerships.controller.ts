@@ -5,26 +5,35 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ApiResponse,
   ApiResponseEnvelope,
-  CursorPaginationDto,
   CursorPaginationHelper,
+  OffsetPaginationHelper,
   RequestContextService,
-} from '@app/common';
+} , DEFAULT_TENANT_ID } from '@app/common';
 import { Dealership, DealershipService } from '@app/organization';
 import {
   AvailabilityResponseDto,
   DealershipAvailableSlotsResponseDto,
   ResourceAvailabilityService,
-  SlotTechniciansResponseDto,
+  Technician,
   WorkshopCacheService,
 } from '@app/workshop';
+import {
+  AvailabilityQueryDto,
+  AvailableSlotsQueryDto,
+  DealershipQueryDto,
+  TechnicianQueryDto,
+} from './dto';
+
+const BENCHMARK_DATE = '2026-11-01';
+const DEFAULT_SERVICE_TYPE_ID = '1';
 
 /**
  * HTTP Controller handling Dealership discovery, slot availability queries,
- * and technician lookups for customer and staff booking flows with cursor-based pagination.
+ * and technician lookups for customer and staff booking flows with offset pagination & optional filters.
  */
 @ApiTags('Dealerships')
 @Controller({ path: 'v1/dealerships' })
@@ -37,13 +46,23 @@ export class DealershipsController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List all operational dealerships for the active tenant with cursor pagination' })
+  @ApiOperation({ summary: 'List all operational dealerships for the active tenant with offset pagination and optional code/name filters' })
   public async listDealerships(
-    @Query() paginationDto: CursorPaginationDto,
+    @Query() queryDto: DealershipQueryDto,
   ): Promise<ApiResponseEnvelope<Dealership[]>> {
-    const tenantId = String(RequestContextService.getTenantId() ?? 1);
-    const result = await this.dealershipService.listDealershipsPaginated(tenantId, paginationDto);
-    return ApiResponse.cursorPaginated(result.items, result.meta);
+    const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
+
+    if (queryDto.cursor) {
+      CursorPaginationHelper.decode(queryDto.cursor);
+      const result = await this.dealershipService.listDealershipsPaginated(tenantId, {
+        cursor: queryDto.cursor,
+        limit: queryDto.limit,
+      });
+      return ApiResponse.cursorPaginated(result.items, result.meta);
+    }
+
+    const result = await this.dealershipService.listDealershipsOffsetPaginated(queryDto, { tenantId });
+    return ApiResponse.offsetPaginated(result);
   }
 
   @Get(':id/available-slots')
@@ -51,29 +70,19 @@ export class DealershipsController {
     summary:
       'Retrieve all available slots and service types for a dealership on a given date, including available technician details per slot',
   })
-  @ApiQuery({
-    name: 'date',
-    required: true,
-    description: 'Target query date in YYYY-MM-DD format',
-    example: '2026-11-01',
-  })
-  @ApiQuery({
-    name: 'serviceTypeId',
-    required: false,
-    description: 'Optional service type filter. If omitted, returns slots for all active service types',
-    example: '1',
-  })
   public async getAvailableSlots(
     @Param('id') id: string,
-    @Query('date') date: string,
-    @Query('serviceTypeId') serviceTypeId?: string,
+    @Query() queryDto: AvailableSlotsQueryDto,
   ): Promise<DealershipAvailableSlotsResponseDto> {
-    const tenantId = String(RequestContextService.getTenantId() ?? 1);
+    const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
+    const targetDate = queryDto.date ?? BENCHMARK_DATE;
+    const targetServiceType = queryDto.serviceTypeId ?? queryDto.service_type_id;
+
     return this.availabilityService.getDealershipAvailableSlots(
       tenantId,
       id,
-      date,
-      serviceTypeId,
+      targetDate,
+      targetServiceType,
     );
   }
 
@@ -82,53 +91,80 @@ export class DealershipsController {
     summary:
       'Query slot grid availability and free technicians for a specific dealership, service type, and date',
   })
-  @ApiQuery({ name: 'date', required: true, example: '2026-11-01' })
-  @ApiQuery({ name: 'service_type_id', required: true, example: '1' })
   public async getAvailability(
     @Param('id') id: string,
-    @Query('date') date: string,
-    @Query('service_type_id') serviceTypeId: string,
+    @Query() queryDto: AvailabilityQueryDto,
   ): Promise<AvailabilityResponseDto> {
-    const tenantId = String(RequestContextService.getTenantId() ?? 1);
-    return this.availabilityService.getAvailability(tenantId, id, serviceTypeId, date);
+    const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
+    const targetDate = queryDto.date ?? BENCHMARK_DATE;
+    const targetServiceType = queryDto.service_type_id ?? queryDto.serviceTypeId ?? DEFAULT_SERVICE_TYPE_ID;
+
+    return this.availabilityService.getAvailability(tenantId, id, targetServiceType, targetDate);
   }
 
   @Get(':id/technicians')
   @ApiOperation({
     summary:
-      'Query qualified technicians for a specific dealership (with optional slot filtering and cursor-based pagination)',
-  })
-  @ApiQuery({ name: 'service_type_id', required: false, example: '1' })
-  @ApiQuery({
-    name: 'start_at',
-    required: false,
-    description: 'Optional service start timestamp in ISO 8601 UTC format',
-    example: '2026-11-01T01:00:00.000Z',
+      'Query technicians for a specific dealership with optional filters (code, name, slot) and offset pagination',
   })
   public async getTechnicians(
     @Param('id') id: string,
-    @Query('service_type_id') serviceTypeId?: string,
-    @Query('start_at') startAt?: string,
-    @Query() paginationDto: CursorPaginationDto = {},
-  ): Promise<ApiResponseEnvelope<any[]>> {
-    const tenantId = String(RequestContextService.getTenantId() ?? 1);
+    @Query() queryDto: TechnicianQueryDto,
+  ): Promise<ApiResponseEnvelope<Technician[]>> {
+    const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
+    const serviceTypeId = queryDto.service_type_id ?? queryDto.serviceTypeId;
 
-    if (serviceTypeId && startAt) {
+    if (serviceTypeId && queryDto.start_at) {
       const slotResult = await this.availabilityService.getTechniciansForSlot(
         tenantId,
         id,
         serviceTypeId,
-        startAt,
+        queryDto.start_at,
       );
-      const paginated = CursorPaginationHelper.paginateArray(slotResult.technicians, paginationDto);
+
+      if (queryDto.cursor) {
+        const paginated = CursorPaginationHelper.paginateArray(slotResult.technicians, {
+          cursor: queryDto.cursor,
+          limit: queryDto.limit,
+        });
+        return ApiResponse.cursorPaginated(paginated.items, paginated.meta);
+      }
+
+      const paginated = OffsetPaginationHelper.paginateArray(slotResult.technicians, {
+        page: queryDto.page,
+        limit: queryDto.limit,
+      });
+      return ApiResponse.offsetPaginated(paginated);
+    }
+
+    // List all dealership technicians from Redis Hash Cache / DB with optional code/name filtering
+    let technicians = this.workshopCache
+      ? await this.workshopCache.getTechnicians(id, tenantId)
+      : [];
+
+    if (queryDto.code) {
+      const filterCode = queryDto.code.toLowerCase().trim();
+      technicians = technicians.filter((t) => t.code?.toLowerCase().includes(filterCode));
+    }
+
+    if (queryDto.name) {
+      const filterName = queryDto.name.toLowerCase().trim();
+      technicians = technicians.filter((t) => t.name?.toLowerCase().includes(filterName));
+    }
+
+    if (queryDto.cursor) {
+      const paginated = CursorPaginationHelper.paginateArray(technicians, {
+        cursor: queryDto.cursor,
+        limit: queryDto.limit,
+      });
       return ApiResponse.cursorPaginated(paginated.items, paginated.meta);
     }
 
-    // When no slot filters are specified: list all dealership technicians from Redis Hash Cache / DB
-    const technicians = this.workshopCache
-      ? await this.workshopCache.getTechnicians(id, tenantId)
-      : [];
-    const paginated = CursorPaginationHelper.paginateArray(technicians, paginationDto);
-    return ApiResponse.cursorPaginated(paginated.items, paginated.meta);
+    const paginated = OffsetPaginationHelper.paginateArray(technicians, {
+      page: queryDto.page,
+      limit: queryDto.limit,
+    });
+
+    return ApiResponse.offsetPaginated(paginated);
   }
 }

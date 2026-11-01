@@ -12,6 +12,8 @@ import { AppointmentsController } from './appointments/appointments.controller';
 import { DealershipsController } from './dealerships/dealerships.controller';
 import { ServiceTypesController } from './catalog/service-types.controller';
 import { CustomerVehiclesController } from './crm/customer-vehicles.controller';
+import { CustomersController } from './crm/customers.controller';
+import { AuthController } from './auth/auth.controller';
 
 /**
  * Root HTTP Application Module for `apps/scheduler-api` (§3 & §4.1 of SYSTEM_DESIGN.md).
@@ -55,6 +57,8 @@ import { CustomerVehiclesController } from './crm/customer-vehicles.controller';
     DealershipsController,
     ServiceTypesController,
     CustomerVehiclesController,
+    CustomersController,
+    AuthController,
   ],
   providers: [
     {
