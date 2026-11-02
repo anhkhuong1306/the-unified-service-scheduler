@@ -179,10 +179,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       headers?: Record<string, string | string[] | undefined>;
     }>();
     const response = ctx.getResponse<{
+      headersSent?: boolean;
       status: (code: number) => { json: (body: unknown) => void };
       setHeader?: (name: string, value: string) => void;
       locals?: Record<string, unknown>;
     }>();
+
+    if (response?.headersSent) {
+      return;
+    }
 
     const incomingHeader = request?.headers?.[CORRELATION_ID_HEADER];
     const incomingCorrelationId = Array.isArray(incomingHeader)

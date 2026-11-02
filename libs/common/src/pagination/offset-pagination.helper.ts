@@ -16,7 +16,10 @@ export class OffsetPaginationHelper {
     const offset = (page - 1) * limit;
 
     const alias = qb.alias;
-    if (options.defaultSortField && qb.expressionMap.orderBys && Object.keys(qb.expressionMap.orderBys).length === 0) {
+    const hasExistingOrder =
+      Boolean(qb.expressionMap.orderBys) &&
+      Object.keys(qb.expressionMap.orderBys).length > 0;
+    if (options.defaultSortField && !hasExistingOrder) {
       qb.orderBy(`${alias}.${options.defaultSortField}`, options.defaultSortOrder ?? 'ASC');
     }
 
