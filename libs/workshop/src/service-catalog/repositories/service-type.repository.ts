@@ -2,7 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
 import { ServiceType } from '../entities/service-type.entity';
-import { ResourceNotFoundException } , DEFAULT_TENANT_ID } from '@app/common';
+import {
+  CursorPaginationHelper,
+  CursorPaginationMeta,
+  OffsetPaginationHelper,
+  OffsetPaginationMeta,
+  ResourceNotFoundException,
+  DEFAULT_TENANT_ID,
+} from '@app/common';
+import { ServiceTypeCursorParams, ServiceTypeFilterParams } from '../types/service-catalog-query.params';
 
 @Injectable()
 export class ServiceTypeRepository {
@@ -10,6 +18,48 @@ export class ServiceTypeRepository {
     @InjectRepository(ServiceType)
     private readonly repo: Repository<ServiceType>,
   ) {}
+
+  public async paginateCursor(
+    params: ServiceTypeCursorParams,
+  ): Promise<{ items: ServiceType[]; meta: CursorPaginationMeta }> {
+    const tenantId = params.tenantId ?? DEFAULT_TENANT_ID;
+    const qb = this.repo
+      .createQueryBuilder('service_type')
+      .where('service_type.tenantId = :tenantId', { tenantId });
+
+    return CursorPaginationHelper.paginateQueryBuilder(
+      qb,
+      { cursor: params.cursor, limit: params.limit },
+      { sortField: 'id', sortOrder: 'ASC' },
+    );
+  }
+
+  public async paginateOffset(
+    params: ServiceTypeFilterParams,
+  ): Promise<{ items: ServiceType[]; meta: OffsetPaginationMeta }> {
+    const tenantId = params.tenantId ?? DEFAULT_TENANT_ID;
+    const qb = this.repo
+      .createQueryBuilder('service_type')
+      .where('service_type.tenantId = :tenantId', { tenantId });
+
+    if (params.code) {
+      qb.andWhere('service_type.code ILIKE :code', {
+        code: `%${params.code.trim()}%`,
+      });
+    }
+
+    if (params.name) {
+      qb.andWhere('service_type.name ILIKE :name', {
+        name: `%${params.name.trim()}%`,
+      });
+    }
+
+    return OffsetPaginationHelper.paginateQueryBuilder(
+      qb,
+      { page: params.page, limit: params.limit },
+      { defaultSortField: 'id', defaultSortOrder: 'ASC' },
+    );
+  }
 
   public async findById(
     id: string,

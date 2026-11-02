@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { WorkshopSettings } from '../entities/workshop-settings.entity';
-import { ResourceNotFoundException } , DEFAULT_TENANT_ID } from '@app/common';
+import { ResourceNotFoundException, DEFAULT_TENANT_ID } from '@app/common';
 
 @Injectable()
 export class WorkshopSettingsRepository {

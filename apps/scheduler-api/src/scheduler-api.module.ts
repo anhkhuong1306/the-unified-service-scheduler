@@ -2,13 +2,14 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthGuard, CommonModule, CorrelationIdMiddleware } from '@app/common';
+import { AuthGuard, CommonModule, CorrelationIdMiddleware, QueryParamNormalizerMiddleware } from '@app/common';
 import { CrmModule } from '@app/crm';
 import { OrganizationModule } from '@app/organization';
 import { SsoMockModule } from '@app/sso-mock';
 import { WorkshopModule } from '@app/workshop';
 import { HealthController } from './health/health.controller';
 import { AppointmentsController } from './appointments/appointments.controller';
+import { StaffAppointmentsController } from './appointments/staff-appointments.controller';
 import { DealershipsController } from './dealerships/dealerships.controller';
 import { ServiceTypesController } from './catalog/service-types.controller';
 import { CustomerVehiclesController } from './crm/customer-vehicles.controller';
@@ -54,6 +55,7 @@ import { AuthController } from './auth/auth.controller';
   controllers: [
     HealthController,
     AppointmentsController,
+    StaffAppointmentsController,
     DealershipsController,
     ServiceTypesController,
     CustomerVehiclesController,
@@ -69,6 +71,6 @@ import { AuthController } from './auth/auth.controller';
 })
 export class SchedulerApiModule implements NestModule {
   public configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+    consumer.apply(CorrelationIdMiddleware, QueryParamNormalizerMiddleware).forRoutes('*');
   }
 }

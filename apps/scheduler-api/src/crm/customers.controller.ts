@@ -4,7 +4,8 @@ import {
   ApiResponse,
   ApiResponseEnvelope,
   RequestContextService,
-} , DEFAULT_TENANT_ID } from '@app/common';
+  DEFAULT_TENANT_ID,
+} from '@app/common';
 import {
   CRM_DIRECTORY_CONTRACT,
   CustomerSnapshotDto,

@@ -14,4 +14,16 @@ export class CustomerQueryDto extends OffsetPaginationDto {
   @Trim()
   @IsString()
   public name?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by customer phone number' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public phone?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by customer email address' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public email?: string;
 }

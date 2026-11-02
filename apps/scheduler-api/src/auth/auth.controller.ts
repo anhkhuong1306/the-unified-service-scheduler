@@ -26,9 +26,16 @@ export class AuthController {
   }
 
   private createToken(dto: TokenRequestDto): ApiResponseEnvelope<TokenResponse> {
-    const sub = dto.sub || 'a1111111-1111-1111-1111-111111111111';
-    const role = dto.role || 'customer';
-    const tenantId = Number(dto.tenant_id ?? 1);
+    const sub = dto.sub || dto.userId || dto.user_id || 'a1111111-1111-1111-1111-111111111111';
+    let role = dto.role || 'customer';
+    if (dto.roles) {
+      if (Array.isArray(dto.roles) && dto.roles.length > 0) {
+        role = dto.roles.includes('staff') ? 'staff' : (dto.roles[0] as any);
+      } else if (typeof dto.roles === 'string') {
+        role = dto.roles as any;
+      }
+    }
+    const tenantId = Number(dto.tenant_id ?? dto.tenantId ?? 1);
 
     const header = { alg: 'HS256', typ: 'JWT' };
     const payload = {

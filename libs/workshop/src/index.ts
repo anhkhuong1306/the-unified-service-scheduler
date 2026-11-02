@@ -7,6 +7,7 @@ export * from './appointment/types';
 export * from './appointment/repositories';
 export * from './appointment/usecases';
 export * from './appointment/services';
+export * from './appointment/state-machine/appointment.state-machine';
 export * from './appointment/dto';
 export * from './appointment/domain/slot-policy';
 export * from './appointment/domain/slot-calculator';
@@ -22,7 +23,8 @@ export * from './service-catalog/types';
 export * from './resource/entities';
 export * from './resource/repositories';
 export * from './resource/services';
-export * from './resource/dto/slot-availability.dto';
+export * from './resource/dto';
+export * from './resource/types';
 
 export * from './settings/entities';
 export * from './settings/repositories';

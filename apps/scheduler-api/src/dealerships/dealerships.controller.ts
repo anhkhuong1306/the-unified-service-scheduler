@@ -12,24 +12,21 @@ import {
   CursorPaginationHelper,
   OffsetPaginationHelper,
   RequestContextService,
-} , DEFAULT_TENANT_ID } from '@app/common';
+  DEFAULT_TENANT_ID,
+} from '@app/common';
 import { Dealership, DealershipService } from '@app/organization';
 import {
-  AvailabilityResponseDto,
+  AvailableTechnicianDto,
   DealershipAvailableSlotsResponseDto,
   ResourceAvailabilityService,
   Technician,
   WorkshopCacheService,
 } from '@app/workshop';
 import {
-  AvailabilityQueryDto,
   AvailableSlotsQueryDto,
   DealershipQueryDto,
   TechnicianQueryDto,
 } from './dto';
-
-const BENCHMARK_DATE = '2026-11-01';
-const DEFAULT_SERVICE_TYPE_ID = '1';
 
 /**
  * HTTP Controller handling Dealership discovery, slot availability queries,
@@ -68,38 +65,40 @@ export class DealershipsController {
   @Get(':id/available-slots')
   @ApiOperation({
     summary:
-      'Retrieve all available slots and service types for a dealership on a given date, including available technician details per slot',
+      'Retrieve all available slots and service types for a dealership with optional filters (service_type_ids, technician_ids, date) and offset pagination',
   })
   public async getAvailableSlots(
     @Param('id') id: string,
     @Query() queryDto: AvailableSlotsQueryDto,
-  ): Promise<DealershipAvailableSlotsResponseDto> {
+  ): Promise<ApiResponseEnvelope<DealershipAvailableSlotsResponseDto>> {
     const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
-    const targetDate = queryDto.date ?? BENCHMARK_DATE;
-    const targetServiceType = queryDto.serviceTypeId ?? queryDto.service_type_id;
 
-    return this.availabilityService.getDealershipAvailableSlots(
+    const serviceTypeIds =
+      queryDto.service_type_ids ??
+      queryDto.serviceTypeIds ??
+      (queryDto.service_type_id ? [queryDto.service_type_id] : undefined) ??
+      (queryDto.serviceTypeId ? [queryDto.serviceTypeId] : undefined);
+
+    const technicianIds =
+      queryDto.technician_ids ??
+      queryDto.technicianIds ??
+      (queryDto.technician_id ? [queryDto.technician_id] : undefined) ??
+      (queryDto.technicianId ? [queryDto.technicianId] : undefined);
+
+    const result = await this.availabilityService.getDealershipAvailableSlots(
       tenantId,
       id,
-      targetDate,
-      targetServiceType,
+      {
+        date: queryDto.date,
+        serviceTypeIds,
+        technicianIds,
+        page: queryDto.page,
+        limit: queryDto.limit,
+      },
     );
-  }
 
-  @Get(':id/availability')
-  @ApiOperation({
-    summary:
-      'Query slot grid availability and free technicians for a specific dealership, service type, and date',
-  })
-  public async getAvailability(
-    @Param('id') id: string,
-    @Query() queryDto: AvailabilityQueryDto,
-  ): Promise<AvailabilityResponseDto> {
-    const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
-    const targetDate = queryDto.date ?? BENCHMARK_DATE;
-    const targetServiceType = queryDto.service_type_id ?? queryDto.serviceTypeId ?? DEFAULT_SERVICE_TYPE_ID;
-
-    return this.availabilityService.getAvailability(tenantId, id, targetServiceType, targetDate);
+    const { meta, ...data } = result;
+    return ApiResponse.build(200, null, data, 'OK', meta);
   }
 
   @Get(':id/technicians')
@@ -110,7 +109,7 @@ export class DealershipsController {
   public async getTechnicians(
     @Param('id') id: string,
     @Query() queryDto: TechnicianQueryDto,
-  ): Promise<ApiResponseEnvelope<Technician[]>> {
+  ): Promise<ApiResponseEnvelope<Array<Technician | AvailableTechnicianDto>>> {
     const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
     const serviceTypeId = queryDto.service_type_id ?? queryDto.serviceTypeId;
 

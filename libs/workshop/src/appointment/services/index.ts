@@ -7,3 +7,4 @@ export * from './resource-allocator.service';
 export * from './booking-lock.service';
 export * from './reference-code.generator';
 export * from './appointment-slot-validator.service';
+export * from './appointment-stream.service';

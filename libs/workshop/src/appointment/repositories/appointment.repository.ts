@@ -201,9 +201,11 @@ export class AppointmentRepository {
     params: CustomerCursorParams,
   ): Promise<{ items: Appointment[]; meta: CursorPaginationMeta }> {
     const tenantId = params.tenantId ?? DEFAULT_TENANT_ID;
+    const customerId = (params as any).customerId ?? params.actorSub;
     const qb = this.repo
       .createQueryBuilder('appointment')
-      .where('appointment.tenant_id = :tenantId', { tenantId });
+      .where('appointment.tenant_id = :tenantId', { tenantId })
+      .andWhere('appointment.customer_id = :customerId', { customerId });
 
     return CursorPaginationHelper.paginateQueryBuilder(
       qb,

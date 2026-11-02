@@ -39,6 +39,18 @@ export class AppointmentQueryDto extends OffsetPaginationDto {
   @IsString()
   public customer?: string;
 
+  @ApiPropertyOptional({ description: 'Filter by customer ID (snake_case alias)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public customer_id?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by customer ID (camelCase alias)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public customerId?: string;
+
   @ApiPropertyOptional({
     description: 'Filter by technician identifier',
     example: '1',
@@ -47,6 +59,18 @@ export class AppointmentQueryDto extends OffsetPaginationDto {
   @Trim()
   @IsString()
   public technician?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by technician ID (snake_case alias)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public technician_id?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by technician ID (camelCase alias)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public technicianId?: string;
 
   @ApiPropertyOptional({
     description: 'Filter by service type identifier',
@@ -73,6 +97,36 @@ export class AppointmentQueryDto extends OffsetPaginationDto {
   @Trim()
   @IsString()
   public dealership_id?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by dealership ID (camelCase alias)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public dealershipId?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by from date range (YYYY-MM-DD)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public from_date?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by from date range (camelCase alias)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public fromDate?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by to date range (YYYY-MM-DD)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public to_date?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by to date range (camelCase alias)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public toDate?: string;
 
   @ApiPropertyOptional({
     description: 'Filter by appointment operational status',

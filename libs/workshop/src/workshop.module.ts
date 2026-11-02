@@ -16,6 +16,13 @@ import { ServiceCatalogRepository } from './service-catalog/repositories/service
 import { ServiceTypeRepository } from './service-catalog/repositories/service-type.repository';
 import { CreateAppointmentUseCase } from './appointment/usecases/create-appointment.usecase';
 import { CancelAppointmentUseCase } from './appointment/usecases/cancel-appointment.usecase';
+import { UpdateAppointmentUseCase } from './appointment/usecases/update-appointment.usecase';
+import { ReassignAppointmentUseCase } from './appointment/usecases/reassign-appointment.usecase';
+import { RescheduleAppointmentUseCase } from './appointment/usecases/reschedule-appointment.usecase';
+import { SwapAppointmentsUseCase } from './appointment/usecases/swap-appointments.usecase';
+import { TransitionAppointmentStatusUseCase } from './appointment/usecases/transition-appointment-status.usecase';
+import { AppointmentStateMachine } from './appointment/state-machine/appointment.state-machine';
+import { AppointmentStreamService } from './appointment/services/appointment-stream.service';
 import { AppointmentService } from './appointment/services/appointment.service';
 import { AppointmentRepository } from './appointment/repositories/appointment.repository';
 import { AppointmentDetailRepository } from './appointment/repositories/appointment-detail.repository';
@@ -78,6 +85,13 @@ const WORKSHOP_SERVICES = [
   ServiceCatalogService,
   CreateAppointmentUseCase,
   CancelAppointmentUseCase,
+  UpdateAppointmentUseCase,
+  ReassignAppointmentUseCase,
+  RescheduleAppointmentUseCase,
+  SwapAppointmentsUseCase,
+  TransitionAppointmentStatusUseCase,
+  AppointmentStateMachine,
+  AppointmentStreamService,
   AppointmentService,
   WorkshopCacheService,
 ];

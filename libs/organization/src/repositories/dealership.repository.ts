@@ -6,7 +6,8 @@ import {
   CursorPaginationMeta,
   OffsetPaginationHelper,
   OffsetPaginationMeta,
-} , DEFAULT_TENANT_ID } from '@app/common';
+  DEFAULT_TENANT_ID,
+} from '@app/common';
 import { Dealership } from '../entities/dealership.entity';
 import { DealershipCursorParams, DealershipFilterParams, FindDealershipByIdParams } from '../types/dealership-query.params';
 

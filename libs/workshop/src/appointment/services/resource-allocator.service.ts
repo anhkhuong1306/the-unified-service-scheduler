@@ -26,6 +26,7 @@ export class ResourceAllocator {
       p.dealershipId,
       startAt,
       occupiedUntil,
+      p.excludeAppointmentId,
     );
     if (!bayId) {
       throw SlotUnavailableException.withAlternatives(
@@ -42,6 +43,7 @@ export class ResourceAllocator {
       requestedId: p.requestedTechnicianId,
       from: startAt,
       to: occupiedUntil,
+      excludeAppointmentId: p.excludeAppointmentId,
     });
 
     if (!technicianId) {

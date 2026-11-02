@@ -26,4 +26,24 @@ export class OffsetPaginationDto {
   @Min(1)
   @Max(100)
   public limit?: number = 20;
+
+  @ApiPropertyOptional({
+    description: 'Number of records per page (snake_case alias for limit)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  public per_page?: number;
+
+  @ApiPropertyOptional({
+    description: 'Number of records per page (camelCase alias for limit)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  public perPage?: number;
 }

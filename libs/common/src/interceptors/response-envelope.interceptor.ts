@@ -14,6 +14,7 @@ import {
   DEFAULT_CREATED_MESSAGE,
   DEFAULT_SUCCESS_MESSAGE,
 } from '../responses/api-response';
+import { transformKeysToSnakeCase } from '../utils/snake-case.util';
 
 export const ENVELOPE_LOCALS_KEY = '__envelopeResponse';
 export const EXCEPTION_META_LOCALS_KEY = '__exceptionMeta';
@@ -31,12 +32,28 @@ export class ResponseEnvelopeInterceptor implements NestInterceptor {
     }
 
     const httpContext = context.switchToHttp();
+    const request = httpContext.getRequest<{
+      headers?: Record<string, string>;
+      path?: string;
+      url?: string;
+    }>();
     const response = httpContext.getResponse<{
       statusCode?: number;
       status?: (code: number) => unknown;
       setHeader?: (name: string, value: string) => void;
+      headersSent?: boolean;
       locals?: Record<string, unknown>;
     }>();
+
+    // Do not envelope SSE streaming responses (headers will conflict with chunked events)
+    if (
+      request?.headers?.['accept'] === 'text/event-stream' ||
+      request?.path?.includes('/stream') ||
+      request?.url?.includes('/stream') ||
+      Boolean(response?.headersSent)
+    ) {
+      return next.handle();
+    }
 
     return next.handle().pipe(
       map((body: unknown): ApiResponseEnvelope => {
@@ -52,12 +69,12 @@ export class ResponseEnvelopeInterceptor implements NestInterceptor {
           envelope = ApiResponse.build(
             body.statusCode,
             body.errorCode,
-            body.data,
+            transformKeysToSnakeCase(body.data),
             body.message,
-            {
+            transformKeysToSnakeCase({
               ...body.meta,
               correlation_id: correlationId,
-            },
+            }),
           );
           if (typeof response?.status === 'function') {
             response.status(envelope.statusCode);
@@ -73,9 +90,9 @@ export class ResponseEnvelopeInterceptor implements NestInterceptor {
           envelope = ApiResponse.build(
             statusCode,
             null,
-            body ?? null,
+            transformKeysToSnakeCase(body ?? null),
             defaultMessage,
-            { correlation_id: correlationId },
+            transformKeysToSnakeCase({ correlation_id: correlationId }),
           );
         }
 
