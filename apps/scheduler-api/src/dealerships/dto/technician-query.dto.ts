@@ -30,6 +30,11 @@ export class TechnicianQueryDto extends OffsetPaginationDto {
   @IsString()
   public start_at?: string;
 
+  @ApiPropertyOptional({ description: 'Optional slot start time ISO 8601 UTC (camelCase alias)' })
+  @IsOptional()
+  @IsString()
+  public startAt?: string;
+
   @ApiPropertyOptional({ description: 'Optional cursor for backwards-compatible seeking' })
   @IsOptional()
   @IsString()

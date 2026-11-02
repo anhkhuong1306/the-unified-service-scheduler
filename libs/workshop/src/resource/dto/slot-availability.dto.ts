@@ -238,3 +238,18 @@ export interface SlotTechniciansResponseDto {
   readonly occupiedUntil: string;
   readonly technicians: AvailableTechnicianDto[];
 }
+
+export interface DealershipAvailableSlotsWithMetaDto extends DealershipAvailableSlotsResponseDto {
+  meta: {
+    page: number;
+    per_page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    total_pages: number;
+    hasNext: boolean;
+    has_next: boolean;
+    hasPrev: boolean;
+    has_prev: boolean;
+  };
+}

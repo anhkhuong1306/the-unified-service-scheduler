@@ -1,6 +1,11 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { ResourceNotFoundException, ValidationFailedException } from '@app/common';
+import {
+  getTodayDateString,
+  parseIds,
+  ResourceNotFoundException,
+  ValidationFailedException,
+} from '@app/common';
 import {
   IOrganizationDirectoryContract,
   ORGANIZATION_DIRECTORY_CONTRACT,
@@ -15,23 +20,12 @@ import { WorkshopSettingsRepository } from '../../settings/repositories/workshop
 import { ServiceTypeRepository } from '../../service-catalog/repositories/service-type.repository';
 import {
   AggregatedSlotDto,
-  AvailabilityResponseDto,
   AvailableServiceTypeSummaryDto,
   AvailableTechnicianDto,
-  DealershipAvailableSlotsResponseDto,
-  SlotAvailabilityDto,
+  DealershipAvailableSlotsWithMetaDto,
   SlotTechniciansResponseDto,
 } from '../dto/slot-availability.dto';
-
-export {
-  AggregatedSlotDto,
-  AvailabilityResponseDto,
-  AvailableServiceTypeSummaryDto,
-  AvailableTechnicianDto,
-  DealershipAvailableSlotsResponseDto,
-  SlotAvailabilityDto,
-  SlotTechniciansResponseDto,
-};
+import { AvailableSlotsFilterOptions } from '../types';
 
 /**
  * =========================================================================================
@@ -65,101 +59,21 @@ export class ResourceAvailabilityService {
   }
 
   /**
-   * Calculates slot availability, remaining capacity, and available technicians across a single calendar day
-   * for a specific service type.
-   */
-  public async getAvailability(
-    tenantId: string,
-    dealershipId: string,
-    serviceTypeId: string,
-    date: string,
-  ): Promise<AvailabilityResponseDto> {
-    const settings = await this.loadSettings(dealershipId, tenantId);
-    if (!settings) {
-      throw new ResourceNotFoundException(
-        `Workshop operational settings not found for dealership ${dealershipId}`,
-      );
-    }
-
-    const serviceType = await this.serviceTypeRepo.findById(serviceTypeId, tenantId);
-    if (!serviceType) {
-      throw new ResourceNotFoundException(`Service type ${serviceTypeId} not found`);
-    }
-
-    const candidateSlots: CandidateSlot[] = this.slotPolicy.generate({
-      settings,
-      durationMinutes: serviceType.durationMinutes,
-      date,
-      now: this.clock.now(),
-    });
-
-    const activeCandidateSlots = candidateSlots.filter((slot) => slot.meetsLeadTime);
-
-    const [slotCapacityMap, slotTechMap] = await Promise.all([
-      this.availability.countFreePerSlot(this.dataSource, {
-        dealershipId,
-        skillId: serviceType.skillId,
-        slots: activeCandidateSlots,
-      }),
-      this.availability.findFreeTechniciansPerSlot(this.dataSource, {
-        dealershipId,
-        skillId: serviceType.skillId,
-        slots: activeCandidateSlots,
-      }),
-    ]);
-
-    const slots: SlotAvailabilityDto[] = candidateSlots.map((candidate) => {
-      const isPastOrViolatesLeadTime = !candidate.meetsLeadTime;
-
-      if (isPastOrViolatesLeadTime) {
-        return {
-          startAt: candidate.startAt.toISOString(),
-          endAt: candidate.endAt.toISOString(),
-          status: 'UNAVAILABLE' as const,
-          remainingCapacity: 0,
-          totalCapacity: 0,
-          availableTechnicians: [],
-        };
-      }
-
-      const key = candidate.startAt.toISOString();
-      const capacity = slotCapacityMap.get(key) ?? { remainingCapacity: 0, totalCapacity: 0 };
-      const availableTechs = slotTechMap.get(key) ?? [];
-
-      const isAvailable = capacity.remainingCapacity > 0;
-
-      return {
-        startAt: candidate.startAt.toISOString(),
-        endAt: candidate.endAt.toISOString(),
-        status: isAvailable ? ('AVAILABLE' as const) : ('UNAVAILABLE' as const),
-        remainingCapacity: capacity.remainingCapacity,
-        totalCapacity: capacity.totalCapacity,
-        availableTechnicians: availableTechs.map((tech) => ({
-          id: tech.id,
-          name: tech.name,
-        })),
-      };
-    });
-
-    return {
-      dealershipId,
-      serviceTypeId,
-      date,
-      timezone: settings.timezone,
-      slotMinutes: settings.slotMinutes,
-      slots,
-    };
-  }
-
-  /**
-   * Retrieves aggregated slots and per-service-type availability across an entire dealership.
+   * Retrieves all candidate slots and bookable service types for a dealership on a given date,
+   * organized by slot with available technicians directly alongside startAt, and bookable service types.
+   *
+   * Supports:
+   * - `date`: optional, defaults to current day if omitted
+   * - `serviceTypeIds`: optional array/comma-separated, defaults to all if omitted
+   * - `technicianIds`: optional array/comma-separated, defaults to all if omitted
+   * - `page` & `limit`: offset pagination on candidate slots, default limit 10
    */
   public async getDealershipAvailableSlots(
     tenantId: string,
     dealershipId: string,
-    date: string,
-    serviceTypeId?: string,
-  ): Promise<DealershipAvailableSlotsResponseDto> {
+    dateOrOptions?: string | AvailableSlotsFilterOptions,
+    legacyServiceTypeId?: string,
+  ): Promise<DealershipAvailableSlotsWithMetaDto> {
     const settings = await this.loadSettings(dealershipId, tenantId);
     if (!settings) {
       throw new ResourceNotFoundException(
@@ -167,31 +81,37 @@ export class ResourceAvailabilityService {
       );
     }
 
-    let dealershipName = '';
-    let dealershipTimezone = settings.timezone;
+    const options: AvailableSlotsFilterOptions =
+      typeof dateOrOptions === 'object' && dateOrOptions !== null
+        ? dateOrOptions
+        : {
+            date: typeof dateOrOptions === 'string' ? dateOrOptions : undefined,
+            serviceTypeIds: legacyServiceTypeId,
+          };
+
+    const now = this.clock.now();
+    const targetDate = options.date?.trim() || getTodayDateString(now, settings.timezone);
+
+    let dealershipName = `Dealership ${dealershipId}`;
     if (this.orgDirectory) {
-      try {
-        const d = await this.orgDirectory.findDealershipById(dealershipId, tenantId);
-        if (d) {
-          dealershipName = d.name;
-          dealershipTimezone = d.timezone || settings.timezone;
-        }
-      } catch {
-        // Fallback to settings
+      const dealership = await this.orgDirectory.findDealershipById(dealershipId, tenantId);
+      if (dealership?.name) {
+        dealershipName = dealership.name;
       }
     }
 
+    // 1. Generate baseline operational daily slot grid
     const baseDailySlots = this.slotPolicy.generateBaseDailySlots({
       settings,
-      date,
-      now: this.clock.now(),
+      date: targetDate,
+      now,
     });
 
+    // 2. Pre-query available technicians across the base slot intervals in 1 batch query
     const baseSlotIntervals = baseDailySlots
       .filter((s) => s.meetsLeadTime)
       .map((s) => ({
         startAt: s.startAt,
-        endAt: new Date(s.startAt.getTime() + settings.slotMinutes * 60_000),
         occupiedUntil: new Date(s.startAt.getTime() + settings.slotMinutes * 60_000),
       }));
 
@@ -201,36 +121,33 @@ export class ResourceAvailabilityService {
       slots: baseSlotIntervals,
     });
 
+    // 3. Load active service types (optionally filtered by service_type_ids)
+    const filterServiceTypeIds = parseIds(options.serviceTypeIds);
     let serviceTypes: ServiceType[];
-    if (serviceTypeId) {
-      const single = await this.serviceTypeRepo.findById(serviceTypeId, tenantId);
-      if (!single) {
-        throw new ResourceNotFoundException(`Service type ${serviceTypeId} not found`);
-      }
-      serviceTypes = [single];
+    if (filterServiceTypeIds && filterServiceTypeIds.length > 0) {
+      serviceTypes = await this.serviceTypeRepo.findByIds(filterServiceTypeIds, tenantId);
     } else {
       serviceTypes = await this.serviceTypeRepo.findAll(tenantId);
     }
 
-    const serviceTypesMap = new Map<string, AvailableServiceTypeSummaryDto>();
-    for (const st of serviceTypes) {
-      serviceTypesMap.set(st.id, {
-        id: st.id,
-        code: st.code,
-        name: st.name,
-        durationMinutes: st.durationMinutes,
-        availableSlots: [],
-      });
-    }
+    // 4. Technician filter setup (technician_ids)
+    const filterTechnicianIds = parseIds(options.technicianIds);
+    const techIdSet = filterTechnicianIds ? new Set(filterTechnicianIds) : null;
 
-    const aggregatedSlotTimes = new Set<string>();
+    // 5. Compute candidate slots, remaining capacity, and qualified technicians for each service type
+    const serviceTypeResults: Array<{
+      serviceType: ServiceType;
+      candidateSlots: CandidateSlot[];
+      capacityMap: Map<number, { freeBays: number; freeTechnicians: number }>;
+      techMap: Map<number, AvailableTechnicianDto[]>;
+    }> = [];
 
     for (const st of serviceTypes) {
       const candidateSlots = this.slotPolicy.generate({
         settings,
         durationMinutes: st.durationMinutes,
-        date,
-        now: this.clock.now(),
+        date: targetDate,
+        now,
       });
 
       const activeSlots = candidateSlots.filter((slot) => slot.meetsLeadTime);
@@ -248,71 +165,104 @@ export class ResourceAvailabilityService {
         }),
       ]);
 
-      const serviceSummary = serviceTypesMap.get(st.id)!;
-
-      for (const slot of activeSlots) {
-        const slotKey = slot.startAt.toISOString();
-        const cap = capacityMap.get(slotKey) ?? { remainingCapacity: 0, totalCapacity: 0 };
-        const techs = techMap.get(slotKey) ?? [];
-
-        if (cap.remainingCapacity > 0) {
-          aggregatedSlotTimes.add(slotKey);
-          serviceSummary.availableSlots.push({
-            startAt: slot.startAt.toISOString(),
-            endAt: slot.endAt.toISOString(),
-            remainingCapacity: cap.remainingCapacity,
-            totalCapacity: cap.totalCapacity,
-            availableTechnicians: techs.map((t) => ({ id: t.id, name: t.name })),
-          });
-        }
-      }
+      serviceTypeResults.push({
+        serviceType: st,
+        candidateSlots,
+        capacityMap,
+        techMap,
+      });
     }
 
-    const aggregatedSlots: AggregatedSlotDto[] = Array.from(aggregatedSlotTimes)
-      .sort()
-      .map((startIso) => {
-        const startAt = new Date(startIso);
-        const endAt = new Date(startAt.getTime() + settings.slotMinutes * 60_000);
-        const freeTechs = baseSlotTechMap.get(startIso) ?? [];
+    // 6. Assemble all candidate slots
+    const allAggregatedSlots: AggregatedSlotDto[] = baseDailySlots.map((baseSlot) => {
+      const epochKey = baseSlot.startAt.getTime();
+      let slotTechnicians = baseSlotTechMap.get(epochKey) ?? [];
 
-        const servicesAvailableAtSlot = Array.from(serviceTypesMap.values())
-          .filter((st) => st.availableSlots.some((s) => s.startAt === startIso))
-          .map((st) => ({
-            id: st.id,
-            name: st.name,
-            durationMinutes: st.durationMinutes,
-          }));
+      if (techIdSet) {
+        slotTechnicians = slotTechnicians.filter((t) => techIdSet.has(t.id));
+      }
 
-        return {
-          startAt: startAt.toISOString(),
-          endAt: endAt.toISOString(),
-          availableServicesCount: servicesAvailableAtSlot.length,
-          availableServices: servicesAvailableAtSlot,
-          availableTechnicians: freeTechs.map((t) => ({ id: t.id, name: t.name })),
-        };
-      });
+      const availableServiceTypes: AvailableServiceTypeSummaryDto[] = [];
+
+      if (baseSlot.meetsLeadTime) {
+        for (const stResult of serviceTypeResults) {
+          const matchingCandidate = stResult.candidateSlots.find(
+            (cs) => cs.startAt.getTime() === epochKey,
+          );
+
+          if (matchingCandidate) {
+            const cap = stResult.capacityMap.get(epochKey) ?? { freeBays: 0, freeTechnicians: 0 };
+            let qualifiedTechs = stResult.techMap.get(epochKey) ?? [];
+
+            if (techIdSet) {
+              qualifiedTechs = qualifiedTechs.filter((t) => techIdSet.has(t.id));
+            }
+
+            const effectiveTechCapacity = techIdSet ? qualifiedTechs.length : cap.freeTechnicians;
+            const remainingCapacity = Math.min(cap.freeBays, effectiveTechCapacity);
+
+            if (remainingCapacity > 0) {
+              availableServiceTypes.push({
+                serviceTypeId: stResult.serviceType.id,
+                code: stResult.serviceType.code,
+                name: stResult.serviceType.name,
+                durationMinutes: stResult.serviceType.durationMinutes,
+                endAt: matchingCandidate.endAt.toISOString(),
+                occupiedUntil: matchingCandidate.occupiedUntil.toISOString(),
+                remainingCapacity,
+                availableTechnicians: qualifiedTechs,
+              });
+            }
+          }
+        }
+      }
+
+      return {
+        startAt: baseSlot.startAt.toISOString(),
+        displayTime: baseSlot.displayTime,
+        meetsLeadTime: baseSlot.meetsLeadTime,
+        availableTechnicians: slotTechnicians,
+        availableServiceTypes,
+      };
+    });
+
+    // 7. Offset pagination on candidate slots
+    const page = Math.max(1, Number(options.page || 1));
+    const limit = Math.max(1, Number(options.limit || 10));
+    const total = allAggregatedSlots.length;
+    const totalPages = Math.ceil(total / limit) || 1;
+    const startIndex = (page - 1) * limit;
+    const paginatedSlots = allAggregatedSlots.slice(startIndex, startIndex + limit);
+    const hasNext = page < totalPages;
+    const hasPrev = page > 1;
 
     return {
-      dealership: {
-        id: dealershipId,
-        name: dealershipName,
-        timezone: dealershipTimezone,
-      },
-      date,
+      dealershipId,
+      dealershipName,
+      date: targetDate,
+      timezone: settings.timezone,
       slotMinutes: settings.slotMinutes,
-      operatingHours: {
-        openTime: settings.openTime,
-        closeTime: settings.closeTime,
+      slots: paginatedSlots,
+      meta: {
+        page,
+        per_page: limit,
+        limit,
+        total,
+        totalPages,
+        total_pages: totalPages,
+        hasNext,
+        has_next: hasNext,
+        hasPrev,
+        has_prev: hasPrev,
       },
-      aggregatedSlots,
-      serviceTypes: Array.from(serviceTypesMap.values()),
     };
   }
 
   /**
-   * Retrieves specific available technicians for a service slot.
+   * Retrieves all free qualified technicians for a specific single slot start time and service type.
+   * Corresponds to `GET /v1/dealerships/{id}/technicians?service_type_id=&start_at=` (SYSTEM_DESIGN.md §9.2).
    */
-  public async getSlotTechnicians(
+  public async getTechniciansForSlot(
     tenantId: string,
     dealershipId: string,
     serviceTypeId: string,
@@ -333,7 +283,7 @@ export class ResourceAvailabilityService {
     const startAt = new Date(startAtIso);
     if (isNaN(startAt.getTime())) {
       throw new ValidationFailedException(
-        'Invalid startAt timestamp format (expected ISO 8601 string, e.g. 2026-11-01T08:00:00.000Z)',
+        `Invalid startAt timestamp '${startAtIso}'. Expected ISO 8601 UTC string (e.g. '2026-11-01T01:00:00.000Z')`,
       );
     }
 
