@@ -4,37 +4,39 @@ import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Trim } from '@app/common';
 
 export class ReassignAppointmentDto {
-  @ApiPropertyOptional({ description: 'New technician identifier' })
+  @ApiPropertyOptional({
+    name: 'technician_id',
+    description: 'New technician identifier (snake_case in request)',
+    example: '2',
+  })
   @IsOptional()
   @IsString()
   @Trim()
   public technicianId?: string;
 
-  @ApiPropertyOptional({ description: 'New technician identifier (snake_case alias)' })
-  @IsOptional()
-  @IsString()
-  @Trim()
-  public technician_id?: string;
-
-  @ApiPropertyOptional({ description: 'New service bay identifier' })
+  @ApiPropertyOptional({
+    name: 'service_bay_id',
+    description: 'New service bay identifier (snake_case in request)',
+    example: '3',
+  })
   @IsOptional()
   @IsString()
   @Trim()
   public serviceBayId?: string;
 
-  @ApiPropertyOptional({ description: 'New service bay identifier (snake_case alias)' })
-  @IsOptional()
-  @IsString()
-  @Trim()
-  public service_bay_id?: string;
-
-  @ApiPropertyOptional({ description: 'Reason for staff reassignment' })
+  @ApiPropertyOptional({
+    description: 'Reason for staff reassignment',
+    example: 'Primary technician requested reassignment',
+  })
   @IsOptional()
   @IsString()
   @Trim()
   public reason?: string;
 
-  @ApiPropertyOptional({ description: 'Optimistic lock version expected in database', example: 1 })
+  @ApiPropertyOptional({
+    description: 'Optimistic lock version expected in database',
+    example: 1,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

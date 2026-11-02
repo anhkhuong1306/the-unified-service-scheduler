@@ -58,7 +58,7 @@ export class AppointmentFactory {
     appointment.endAt = slot.endAt;
     appointment.occupiedUntil = slot.occupiedUntil;
     appointment.status = initialStatus;
-    appointment.notes = dto.notes ?? dto.customerNotes ?? null;
+    appointment.notes = dto.customerNotes ?? dto.notes ?? null;
     appointment.version = 1;
     appointment.created_by = actorIdentifier;
     appointment.updated_by = actorIdentifier;
