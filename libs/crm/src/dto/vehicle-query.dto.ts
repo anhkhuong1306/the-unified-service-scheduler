@@ -12,6 +12,12 @@ export class VehicleQueryDto extends OffsetPaginationDto {
   @IsString()
   public tenant_id?: string;
 
+  @ApiPropertyOptional({ description: 'Filter by tenant ID (camelCase alias)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public tenantId?: string;
+
   @ApiPropertyOptional({
     description: 'Filter by customer ID',
     example: '1',
@@ -21,6 +27,21 @@ export class VehicleQueryDto extends OffsetPaginationDto {
   @IsString()
   public customer_id?: string;
 
+  @ApiPropertyOptional({ description: 'Filter by customer ID (camelCase alias)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public customerId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by vehicle code',
+    example: 'VEH_001',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public code?: string;
+
   @ApiPropertyOptional({
     description: 'Filter by license plate (partial or exact)',
     example: '51A-123.45',
@@ -29,6 +50,21 @@ export class VehicleQueryDto extends OffsetPaginationDto {
   @Trim()
   @IsString()
   public license_plate?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by license plate (camelCase alias)' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public licensePlate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by vehicle VIN',
+    example: '1HGCR2F8XHA123456',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  public vin?: string;
 
   @ApiPropertyOptional({
     description: 'Filter by vehicle model',

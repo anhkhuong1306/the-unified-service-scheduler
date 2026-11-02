@@ -6,7 +6,8 @@ import {
   CursorPaginationMeta,
   OffsetPaginationHelper,
   OffsetPaginationMeta,
-} , DEFAULT_TENANT_ID } from '@app/common';
+  DEFAULT_TENANT_ID,
+} from '@app/common';
 import { Vehicle } from '../entities/vehicle.entity';
 import { VehicleCursorParams, VehicleFilterParams } from '../types/crm-query.params';
 
