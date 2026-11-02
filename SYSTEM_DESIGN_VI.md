@@ -4,6 +4,28 @@
 
 ---
 
+## Mục Lục (Chỉ Mục Tài Liệu)
+
+- [1. Bài toán & Phạm vi](#1-bài-toán-phạm-vi)
+  - [1.1 Actors](#11-actors)
+  - [1.2 Mức ưu tiên](#12-mức-ưu-tiên)
+- [2. Giả định (Assumptions) & Invariants Kiến trúc](#2-giả-định-assumptions-invariants-kiến-trúc)
+  - [2.1 Phạm vi & Actors](#21-phạm-vi-actors)
+  - [2.2 Tài nguyên](#22-tài-nguyên)
+  - [2.3 Quy tắc đặt lịch & Chuẩn hóa Lưới Slot (Cấu hình tại `workshop_settings` của từng dealership)](#23-quy-tắc-đặt-lịch-chuẩn-hóa-lưới-slot-cấu-hình-tại-workshopsettings-của-từng-dealership)
+  - [2.4 Quy tắc vòng đời, chỉnh sửa & 3 Invariants Cốt lõi](#24-quy-tắc-vòng-đời-chỉnh-sửa-3-invariants-cốt-lõi)
+- [3. Phân rã Module theo DMS trên nền NestJS Monorepo (`apps/` + `libs/`)](#3-phân-rã-module-theo-dms-trên-nền-nestjs-monorepo-apps-libs)
+  - [3.1 Kỷ luật ranh giới được ép bằng công cụ](#31-kỷ-luật-ranh-giới-được-ép-bằng-công-cụ)
+- [4. Kiến trúc & Lộ trình Tiến hóa Microservices (Phased Strangler Extraction)](#4-kiến-trúc-lộ-trình-tiến-hóa-microservices-phased-strangler-extraction)
+- [5. Data Model & Ràng buộc Toàn vẹn (PostgreSQL 18 + TypeORM)](#5-data-model-ràng-buộc-toàn-vẹn-postgresql-18-typeorm)
+- [6, 7 & 8. Luồng Dữ liệu, Concurrency & Xử lý Vòng đời Nghiệp vụ](#6-7-8-luồng-dữ-liệu-concurrency-xử-lý-vòng-đời-nghiệp-vụ)
+  - [8.1 Ứng Phó Tải Đột Biến 10.000 Requests Cùng Lúc (10k RPS) & Mô Hình Lọc 3 Tầng (Defense-in-Depth)](#81-ứng-phó-tải-đột-biến-10000-requests-cùng-lúc-10k-rps-mô-hình-lọc-3-tầng-defense-in-depth)
+- [9. Quy Chuẩn Kỹ Thuật & Kiến Trúc Cốt Lõi (Universal Engineering Standards)](#9-quy-chuẩn-kỹ-thuật-kiến-trúc-cốt-lõi-universal-engineering-standards)
+- [9, 10 & 11. API Envelope, Mock OIDC (`jose`) & Observability (`Pino` + `AsyncLocalStorage` + `@LogSpan()`)](#9-10-11-api-envelope-mock-oidc-jose-observability-pino-asynclocalstorage-logspan)
+- [12, 13, 14 & 15. Multi-tenancy, Kiểm thử (`Jest` + `Supertest`), Công nghệ & GenAI Collaboration](#12-13-14-15-multi-tenancy-kiểm-thử-jest-supertest-công-nghệ-genai-collaboration)
+
+---
+
 ## 1. Bài toán & Phạm vi
 
 Đại lý đang đặt lịch bảo dưỡng thủ công. Hệ thống backend cho phép **khách hàng đã có tài khoản** đặt lịch cho xe của mình tại đại lý và thời điểm họ chọn, đảm bảo theo thời gian thực rằng có **đồng thời** 1 `ServiceBay` trống và 1 `Technician` **đủ chuyên môn** trống trong suốt thời gian dịch vụ, và tạo bản ghi lịch hẹn xác nhận liên kết khách hàng, xe, kỹ thuật viên, khoang dịch vụ.
@@ -78,13 +100,14 @@ Cấu trúc **NestJS Monorepo** tách biệt rõ **Đơn vị triển khai vật
 - **Public Contracts (`@app/contracts`):** Các module trong `libs/` chỉ giao tiếp qua DI token và DTO trong `@app/contracts`.
 - **Lint Rules trong CI (`eslint-plugin-boundaries`):** Cấm `@app/workshop` import trực tiếp entity/service/repository nội bộ của `@app/crm` hoặc `@app/organization`.
 - **Display Snapshots:** Lưu sẵn `customer_name`, `vehicle_plate`, `vehicle_label` trên bảng `appointments`.
+- **Tầng Cache Redis (`@app/common/redis` & `@app/workshop/cache`):** Cung cấp cơ chế lưu cache dữ liệu danh mục (Dealerships, Service Types, Technicians, Bays) theo cấu trúc Redis Hash (`HSET`, `HGET`, `HGETALL`, `HDEL`), giảm thiểu truy vấn lặp xuống PostgreSQL.
 
 ---
 
 ## 4. Kiến trúc & Lộ trình Tiến hóa Microservices (Phased Strangler Extraction)
 
 Nhờ cấu trúc `apps/` + `libs/` của NestJS Monorepo, việc tách microservice ở các giai đoạn sau chỉ là **tạo thêm file bootstrap `apps/<service>/src/main.ts` mà không phải di chuyển code nghiệp vụ trong `libs/`**:
-- **Stage 1 (MVP — Modular Monolith):** `apps/scheduler-api` nạp `@app/workshop`, `@app/crm`, `@app/organization`; `apps/scheduler-worker` chạy cronjob.
+- **Stage 1 (MVP — Modular Monolith):** `apps/scheduler-api` nạp `@app/workshop`, `@app/crm`, `@app/organization`, `@app/common` (Redis, pagination, audit); `apps/scheduler-worker` chạy cronjob.
 - **Stage 2 (First Extraction — Tách `apps/workshop-service` trước):** Khi tải đặt lịch tăng cao, tách `@app/workshop` thành service riêng; phần `apps/core-service` vẫn đóng gói chung cả `@app/crm` và `@app/organization` để tránh tách vụn quá sớm.
 - **Stage 3 (Domain Growth — Tách `apps/crm-service`):** Khi nghiệp vụ CRM mở rộng lớn (như Scenario C — Sales Lead Management), tách tiếp `@app/crm` thành service độc lập.
 
@@ -92,14 +115,20 @@ Nhờ cấu trúc `apps/` + `libs/` của NestJS Monorepo, việc tách microser
 
 ## 5. Data Model & Ràng buộc Toàn vẹn (PostgreSQL 18 + TypeORM)
 
-- Bảng `workshop_settings`: sao chép sẵn `timezone` từ dealership để `@app/workshop` độc lập tuyệt đối khi tính slot.
-- Bảng `idempotency_keys`: có cột `locked_until` (lease 60s cho trạng thái `IN_PROGRESS`). Chuyển sang `COMPLETED` cùng transaction với `appointments`.
-- Bảng `appointments`: có snapshots `customer_name`, `vehicle_plate`, `vehicle_label` và đầy đủ audit columns `created_at`, `updated_at`, `created_by`, `updated_by`, `cancelled_by` (tự động qua `AuditColumnsSubscriber`). Cột `version` (optimistic lock).
-- Giữ nguyên cột sinh `period tstzrange` và 3 ràng buộc `EXCLUDE USING gist` (`no_bay_overlap`, `no_technician_overlap`, `no_vehicle_overlap`).
+- **Cột `code` bắt buộc cho mọi Master Entity:** Toàn bộ bảng chính (`dealerships`, `customers`, `skills`, `service_types`, `service_bays`, `technicians`, `appointment_details`) đều có cột `code VARCHAR(50) NOT NULL` (kèm unique index theo tenant hoặc dealership) để định danh nghiệp vụ bên cạnh khóa kỹ thuật `id`.
+- **Bảng `appointment_details` (Chi tiết dịch vụ đa gói — Multi-Service Support):**
+  - Hỗ trợ lưu trữ minh bạch từng hạng mục dịch vụ mà khách hàng đặt trong 1 lịch hẹn (`appointment_id`, `service_type_id`, `code`, `name`, `duration_minutes`, `price`, `sequence_order`).
+  - Đi kèm với cột mảng `service_type_ids BIGINT[]` tại bảng `appointments` giúp truy vấn nhanh mà không cần JOIN.
+- **Audit Columns lưu vết Mã/Tên người thao tác:** Các trường audit (`created_by`, `updated_by`, `cancelled_by`) lưu chuỗi `code` hoặc `name` của actor (VD: `CUST-001`, `STAFF-001`, `system_cron`), tuyệt đối không lưu raw UUID khó nhận diện. Tự động gán thông qua `AuditColumnsSubscriber` và `BaseAuditEntity`.
+- **Bảng `workshop_settings`:** Sao chép sẵn `timezone` từ dealership để `@app/workshop` độc lập tuyệt đối khi tính slot.
+- **Bảng `idempotency_keys`:** Có cột `locked_until` (lease 60s cho trạng thái `IN_PROGRESS`). Chuyển sang `COMPLETED` cùng transaction với `appointments`.
+- **Bảng `appointments`:** Có snapshots `customer_name`, `vehicle_plate`, `vehicle_label` và đầy đủ audit columns `created_at`, `updated_at`, `created_by`, `updated_by`, `cancelled_at`, `cancelled_by`. Cột `version` phục vụ Optimistic Locking.
+- **Ràng buộc loại trừ GiST (`btree_gist`):** Duy trì 3 exclusion constraints chống trùng lặp tại mức lưu trữ: `no_bay_overlap`, `no_technician_overlap`, `no_vehicle_overlap` trên dải thời gian `period = [start_at, occupied_until)`.
+- **Ghi chú về Ca nghỉ / Đóng khoang:** Các bảng `technician_unavailabilities` và `bay_closures` thuộc lộ trình Phase 2 (P2), được lược bỏ khỏi schema MVP để tối ưu hiệu năng vận hành thực tế.
 
 ---
 
-## 6, 7 & 8. Luồng Dữ liệu, Concurrency & Xử lý Triệt để 11 Điểm Review
+## 6, 7 & 8. Luồng Dữ liệu, Concurrency & Xử lý Vòng đời Nghiệp vụ
 
 1. **Khóa 2 Cấp Ngăn Chặn Vượt Hạn Mức Active Xuyên Dealership (Fix Case 6):**
    - Đặt lịch tại `CreateAppointmentUseCase`: Xin `pg_advisory_xact_lock(NS_CUSTOMER::int4, customerId::int4)` TRƯỚC, rồi mới xin `pg_advisory_xact_lock(NS_BOOKING::int4, dealershipId::int4)`. Đếm số lịch active trên toàn hệ thống dưới khóa customer này đảm bảo không bao giờ bị vượt `max_active_per_customer = 3`.
@@ -111,17 +140,17 @@ Nhờ cấu trúc `apps/` + `libs/` của NestJS Monorepo, việc tách microser
 4. **Real-Time SSE Đồng Bộ Xuyên Process/Pod Bằng PostgreSQL `LISTEN / NOTIFY` (Fix Case 12):**
    - Bên trong transaction, gọi `SELECT pg_notify('appointment_events', payload)`.
    - `NOTIFY` chỉ được PostgreSQL giao **ngay khi `COMMIT` thành công**, tự động hủy nếu `ROLLBACK`.
-   - `apps/scheduler-worker` (cron expire) và các pod `apps/scheduler-api` đều dùng chung kênh này, giúp event đến tất cả SSE client mà không cần cài thêm Redis/RabbitMQ.
+   - `apps/scheduler-worker` (cron expire) và các pod `apps/scheduler-api` đều dùng chung kênh này, giúp event đến tất cả SSE client mà không cần cài thêm message broker.
    - Event mang theo `version` để client bỏ qua các gói tin cũ nếu đến lệch thứ tự (`payload.version <= local.version`).
-5. **Cấu Hình Pool Connection Chống Nghẽn (Fix Case 13):**
-   - Cấu hình TypeORM `extra: { max: 25, connectionTimeoutMillis: 3000 }` để 20+ request chờ lock không làm cạn pool (mặc định của `pg` là 10). Mọi câu lệnh trong transaction đều chạy qua `manager: EntityManager` duy nhất.
-6. **Quy Tắc Retry & Tính Lại Giờ Sau Khi Giữ Lock:**
-   - Retry lỗi `55P03` / `40P01` bọc **toàn bộ transaction** từ bên ngoài.
-   - Mốc thời gian (`now`) để kiểm tra `lead_time`, `cancellation_cutoff` được tính **sau khi đã lấy được lock**.
-7. **Bổ Sung Endpoint Dời Lịch Cho Khách Tới Sớm (`reschedule`):**
+5. **State Machine & Trạng Thái Tạm Thời `SWAPPING`:**
+   - Quản lý tập trung qua `AppointmentStateMachine`. Cho phép các luồng: `approve`, `reject`, `check_in`, `start` (`IN_PROGRESS`), `complete`, `no_show`, `expire`, `cancel`.
+   - Đối với thao tác Hoán đổi Lịch hẹn (`SwapAppointmentsUseCase`), trạng thái tạm `SWAPPING` được gán trong transaction để tạm thời đưa bản ghi ra khỏi partial GiST index, giúp 2 lịch hoán đổi cho nhau mà không bị xung đột khóa ngoại hay lỗi SQLSTATE 23P01.
+6. **Bổ Sung Endpoint Dời Lịch Cho Khách Tới Sớm (`reschedule`):**
    - Bổ sung `POST /v1/staff/appointments/{id}/reschedule` cho staff dời `start_at` của khách tới sớm (Kịch bản A & B), override `lead_time`, kiểm tra cả Bay và Technician trống.
+7. **Phân bổ Điều phối lại (`reassign`):**
+   - Staff đổi khoang hoặc kỹ thuật viên phụ trách, kiểm tra chặt chẽ thợ mới sở hữu toàn bộ kỹ năng yêu cầu bởi các gói dịch vụ trong lịch hẹn.
 8. **Đánh Giá Lý Do `409` Rõ Ràng (Case 2):**
-   - Kiểm tra `NO_FREE_BAY` trước, sau đó đến `NO_QUALIFIED_TECHNICIAN`, và trả về số lượng chi tiết (`free_bays`, `free_technicians`) trong payload.
+   - Kiểm tra `NO_FREE_BAY` trước, sau đó đến `NO_QUALIFIED_TECHNICIAN`, và trả về số lượng chi tiết (`free_bays`, `free_technicians`) cùng danh sách thời điểm thay thế trong payload.
 
 ### 8.1 Ứng Phó Tải Đột Biến 10.000 Requests Cùng Lúc (10k RPS) & Mô Hình Lọc 3 Tầng (Defense-in-Depth)
 
@@ -138,6 +167,27 @@ Ràng buộc toàn vẹn của PostgreSQL (`EXCLUDE USING gist`) và Advisory Lo
 3. **Tầng 3 (Tối ưu Database Core):**
    - Băm khóa Advisory theo ngày `hash(dealership_id, date)` thay vì khóa toàn bộ đại lý $\to$ booking khác ngày chạy song song 100%.
    - Đặt **PgBouncer** phía trước PostgreSQL để gom hàng ngàn kết nối ứng dụng thành 30–50 kết nối thực tới database.
+
+---
+
+## 9. Quy Chuẩn Kỹ Thuật & Kiến Trúc Cốt Lõi (Universal Engineering Standards)
+
+1. **Phân Trang Bắt Buộc cho Mọi API Danh Sách:**
+   - Phân trang theo **Offset** (`page`, `limit`) làm chuẩn mặc định cho toàn bộ các endpoint listing (`/v1/dealerships`, `/v1/service-types`, `/v1/appointments`, `/v1/staff/appointments`).
+   - Hỗ trợ phân trang theo **Cursor** (`cursor`, `limit`) cho các luồng dữ liệu stream / audit logs.
+   - Luôn chặn ngưỡng trần số lượng bản ghi trên mỗi trang (`limit <= 100`).
+2. **Redis Caching cho Master Data:**
+   - Áp dụng cấu trúc Redis Hash (`HSET`, `HGET`, `HGETALL`, `HDEL`) cho các dữ liệu ít biến động (Dealerships, Service Types, Technicians, Bays), phân vùng domain rõ ràng, tự động invalidate khi có cập nhật.
+3. **Column `code` cho các Master Entities & Tables:**
+   - Tất cả bảng thực thể chính bắt buộc thiết kế có cột `code` (VARCHAR, có index/unique) định danh nghiệp vụ bên cạnh khóa kỹ thuật `id`.
+4. **Audit Fields lưu Code hoặc Name:**
+   - Các trường kiểm toán (`created_by`, `updated_by`, `cancelled_by`) bắt buộc lưu `code` hoặc `name` của actor thực hiện thao tác, không lưu raw UUID.
+5. **Bộ Lọc Mặc Định cho API Listing:**
+   - Mọi API lấy danh sách mặc định hỗ trợ bộ lọc tùy chọn theo `code`, `name`, `date`/`start_at` (sử dụng toán tử tìm kiếm gần đúng không phân biệt hoa thường `ILIKE`).
+6. **Chuẩn Hóa Thuần camelCase:**
+   - Toàn bộ DTOs, query parameters, request payloads, và response models được chuẩn hóa 100% camelCase kiến trúc sạch, triệt tiêu hoàn toàn snake_case ở tầng API.
+7. **Quy Chuẩn Kiểm Thử QA Thực Chiến Nghiêm Ngặt:**
+   - Bắt buộc kiểm thử API thật bằng Postman hoặc cURL đối với mọi endpoint và kiểm thử toàn bộ các tổ hợp điều kiện filter. Capture evidence thực tế vào Test Report và Postman Collection v2.
 
 ---
 

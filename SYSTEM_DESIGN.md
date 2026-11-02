@@ -9,6 +9,51 @@
 
 ---
 
+## Table of Contents
+
+- [1. Problem Statement & Scope](#1-problem-statement-scope)
+  - [1.1 Actors](#11-actors)
+  - [1.2 Delivery priorities](#12-delivery-priorities)
+- [2. Assumptions](#2-assumptions)
+  - [2.1 Scope & actors](#21-scope-actors)
+  - [2.2 Resources](#22-resources)
+  - [2.3 Booking rules & Slot-Grid Alignment (per-dealership `workshop_settings`)](#23-booking-rules-slot-grid-alignment-per-dealership-workshopsettings)
+  - [2.4 Lifecycle rules](#24-lifecycle-rules)
+- [3. Domain Decomposition — DMS-aligned NestJS Monorepo (`apps/` + `libs/`)](#3-domain-decomposition-dms-aligned-nestjs-monorepo-apps-libs)
+  - [3.1 Module boundaries — enforced in CI](#31-module-boundaries-enforced-in-ci)
+- [4. Architecture](#4-architecture)
+  - [4.1 Current implementation — NestJS Monorepo (`apps/` + `libs/`)](#41-current-implementation-nestjs-monorepo-apps-libs)
+  - [4.2 Evolution path — Phased Strangler Extraction (Logical Boundaries ≠ Physical Deployment Units)](#42-evolution-path-phased-strangler-extraction-logical-boundaries-physical-deployment-units)
+- [5. Data Model](#5-data-model)
+  - [5.1 Integrity constraints & Schema DDL (PostgreSQL 18)](#51-integrity-constraints-schema-ddl-postgresql-18)
+  - [5.2 Why range + GiST rather than a discrete slot table](#52-why-range-gist-rather-than-a-discrete-slot-table)
+- [6. Appointment Lifecycle](#6-appointment-lifecycle)
+- [7. Data Flows](#7-data-flows)
+  - [7.1 Availability — `GET /v1/dealerships/{id}/availability?date=&service_type_id=`](#71-availability-get-v1dealershipsidavailabilitydateservicetypeid)
+  - [7.2 Booking — `POST /v1/appointments` (header `Idempotency-Key`)](#72-booking-post-v1appointments-header-idempotency-key)
+  - [7.3 Staff transition — `POST /v1/staff/appointments/{id}/approve` (header `If-Match: <version>`)](#73-staff-transition-post-v1staffappointmentsidapprove-header-if-match)
+  - [7.4 Customer edit, staff reassignment & staff rescheduling](#74-customer-edit-staff-reassignment-staff-rescheduling)
+  - [7.5 PENDING expiry — `ExpirePendingAppointmentsCron` (`apps/scheduler-worker`, every 5 minutes)](#75-pending-expiry-expirependingappointmentscron-appsscheduler-worker-every-5-minutes)
+  - [7.6 Atomic Slot Swap — `POST /v1/staff/appointments/swap`](#76-atomic-slot-swap-post-v1staffappointmentsswap)
+  - [7.7 Real-Time Live Stream via PostgreSQL `LISTEN / NOTIFY` & SSE (Customer, Dealership & Technician Views)](#77-real-time-live-stream-via-postgresql-listen-notify-sse-customer-dealership-technician-views)
+- [8. Concurrency & Reliability](#8-concurrency-reliability)
+  - [8.1 High-Concurrency Spike & Scaling Evolution (Handling 10,000+ Concurrent Requests)](#81-high-concurrency-spike-scaling-evolution-handling-10000-concurrent-requests)
+- [9. API Design](#9-api-design)
+  - [9.1 Unified response envelope](#91-unified-response-envelope)
+  - [9.2 Endpoints](#92-endpoints)
+  - [9.3 Core Engineering Directives & Standards](#93-core-engineering-directives-standards)
+- [10. Security — Authentication via (Mock) OIDC SSO](#10-security-authentication-via-mock-oidc-sso)
+- [11. Observability](#11-observability)
+  - [11.1 Structured logging (Pino JSON to stdout + `AsyncLocalStorage`)](#111-structured-logging-pino-json-to-stdout-asynclocalstorage)
+  - [11.2 Metrics (Prometheus / OpenTelemetry-ready)](#112-metrics-prometheus-opentelemetry-ready)
+  - [11.3 Tracing & health](#113-tracing-health)
+- [12. Multi-tenancy Evolution](#12-multi-tenancy-evolution)
+- [13. Testing Strategy](#13-testing-strategy)
+- [14. Technology Choices](#14-technology-choices)
+- [15. GenAI Collaboration in the Design Phase](#15-genai-collaboration-in-the-design-phase)
+
+---
+
 ## 1. Problem Statement & Scope
 
 Dealerships currently book service appointments manually. The goal is a backend service that lets an **existing customer** book a service appointment for one of their vehicles at a chosen dealership and time, while guaranteeing in real time that **both** a free **Service Bay** and a free, **qualified Technician** are available for the whole service duration — and that a confirmed appointment record links customer, vehicle, technician and bay.
@@ -171,10 +216,12 @@ flowchart TB
             CRM["@app/crm"]
             WS["@app/workshop<br/>Settings, Availability, Allocation, StateMachine, AppointmentStreamService"]
             CONTRACTS["@app/contracts (DI Tokens + DTOs)"]
+            COMMON["@app/common<br/>RedisService, Offset/Cursor Pagination, Normalizer"]
         end
     end
 
     PG[("PostgreSQL 18<br/>advisory locks, btree_gist exclusion constraints")]
+    REDIS[("Redis 7 Cache<br/>Hash Cache (HSET/HGET) for Master Data & Availability")]
     LOG["Structured JSON logs (Pino stdout)"]
 
     OAS --> MW1
@@ -195,6 +242,8 @@ flowchart TB
     ORG --> PG
     CRM --> PG
     WS --> PG
+    WS --> REDIS
+    COMMON --> REDIS
     MW2 -.-> LOG
 ```
 
@@ -242,39 +291,55 @@ flowchart LR
 erDiagram
     TENANTS ||--o{ DEALERSHIPS : owns
     DEALERSHIPS ||--o{ STAFF_MEMBERS : employs
+    DEALERSHIPS ||--|| WORKSHOP_SETTINGS : configures
+    DEALERSHIPS ||--o{ SERVICE_BAYS : has
+    DEALERSHIPS ||--o{ TECHNICIANS : employs
     CUSTOMERS ||--o{ VEHICLES : owns
-    WORKSHOP_SETTINGS ||--o{ SERVICE_BAYS : "per dealership"
     SKILLS ||--o{ SERVICE_TYPES : "required by"
     TECHNICIANS ||--o{ TECHNICIAN_SKILLS : has
     SKILLS ||--o{ TECHNICIAN_SKILLS : "held by"
-    TECHNICIANS ||--o{ TECHNICIAN_UNAVAILABILITIES : "unavailable"
-    SERVICE_BAYS ||--o{ BAY_CLOSURES : "closed"
     SERVICE_BAYS ||--o{ APPOINTMENTS : "allocated to"
     TECHNICIANS ||--o{ APPOINTMENTS : "assigned to"
-    SERVICE_TYPES ||--o{ APPOINTMENTS : defines
+    SERVICE_TYPES ||--o{ APPOINTMENTS : "primary service"
+    APPOINTMENTS ||--o{ APPOINTMENT_DETAILS : contains
+    SERVICE_TYPES ||--o{ APPOINTMENT_DETAILS : "itemized in"
     APPOINTMENTS ||--o{ APPOINTMENT_EVENTS : "audit trail"
 
     DEALERSHIPS {
         bigint id PK
         bigint tenant_id
+        string code UK "Business identifier"
         string name
         string address
         string timezone
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
     }
     STAFF_MEMBERS {
         bigint id PK
         bigint tenant_id
-        bigint dealership_id
+        bigint dealership_id FK
         uuid identity_subject UK "JWT sub"
         string name
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
     }
     CUSTOMERS {
         bigint id PK
         bigint tenant_id
         uuid identity_subject UK "JWT sub"
+        string code UK "Business identifier"
         string name
         string email
         string phone
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
     }
     VEHICLES {
         bigint id PK
@@ -285,6 +350,10 @@ erDiagram
         string make
         string model
         int year
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
     }
     WORKSHOP_SETTINGS {
         bigint dealership_id PK
@@ -300,49 +369,75 @@ erDiagram
         int cancellation_cutoff_minutes
         boolean requires_approval
         int max_active_per_customer
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
+    }
+    SKILLS {
+        bigint id PK
+        bigint tenant_id
+        string code UK "e.g. GENERAL, ENGINE, BRAKES"
+        string name
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
     }
     SERVICE_TYPES {
         bigint id PK
         bigint tenant_id
         bigint skill_id FK
-        string code UK
+        string code UK "e.g. OIL_CHANGE, BRAKE_SERVICE"
         string name
         int duration_minutes
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
     }
     SERVICE_BAYS {
         bigint id PK
         bigint tenant_id
-        bigint dealership_id
-        string code
+        bigint dealership_id FK
+        string code UK "e.g. BAY-01"
         boolean is_active
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
     }
     TECHNICIANS {
         bigint id PK
         bigint tenant_id
-        bigint dealership_id
+        bigint dealership_id FK
+        string code UK "e.g. TECH-01"
         string name
         boolean is_active
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
     }
-    TECHNICIAN_UNAVAILABILITIES {
+    TECHNICIAN_SKILLS {
         bigint id PK
+        bigint tenant_id
         bigint technician_id FK
-        tstzrange period
-        string reason
-    }
-    BAY_CLOSURES {
-        bigint id PK
-        bigint service_bay_id FK
-        tstzrange period
-        string reason
+        bigint skill_id FK
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
     }
     APPOINTMENTS {
         uuid id PK
         bigint tenant_id
-        string reference_code UK
-        bigint dealership_id
-        bigint customer_id
-        bigint vehicle_id
+        string reference_code UK "e.g. APT-20261102-XXXX"
+        bigint dealership_id FK
+        bigint customer_id FK
+        bigint vehicle_id FK
         bigint service_type_id FK
+        bigint_array service_type_ids "Multi-service support"
         bigint service_bay_id FK
         bigint technician_id FK
         string customer_name "snapshot"
@@ -352,16 +447,31 @@ erDiagram
         timestamptz end_at
         timestamptz occupied_until "end_at + buffer"
         tstzrange period "generated, GiST"
-        string status
+        string status "PENDING, CONFIRMED, etc."
         int version "optimistic lock"
         text notes
         string cancel_reason
         timestamptz cancelled_at
-        uuid cancelled_by "JWT sub"
+        string cancelled_by "Actor code/name"
         timestamptz created_at
-        uuid created_by "JWT sub"
+        string created_by "Actor code/name"
         timestamptz updated_at
-        uuid updated_by "JWT sub"
+        string updated_by "Actor code/name"
+    }
+    APPOINTMENT_DETAILS {
+        bigint id PK
+        bigint tenant_id
+        uuid appointment_id FK
+        bigint service_type_id FK
+        string code "Service code"
+        string name "Service name"
+        int duration_minutes
+        numeric price
+        int sequence_order
+        timestamptz created_at
+        string created_by "Actor code/name"
+        timestamptz updated_at
+        string updated_by "Actor code/name"
     }
     APPOINTMENT_EVENTS {
         bigint id PK
@@ -375,35 +485,248 @@ erDiagram
     }
 ```
 
-- **Audit columns:** `created_by`, `updated_by`, `cancelled_by` hold the JWT `sub` of the acting customer or staff member; `NULL` for system actions (the matching `appointment_events` row records `actor_type = system`). Automatically populated via a reusable TypeORM `AuditColumnsSubscriber` reading `actorSub` from `AsyncLocalStorage`.
+> **Design Note on Future Extensions:** Unavailability tables (`technician_unavailabilities`, `bay_closures`) represent Phase 2/P2 roadmap extensions and are excluded from the current production schema to preserve lean operational overhead.
+
+- **Audit columns:** `created_by`, `updated_by`, `cancelled_by` hold the actor `code` or `name` (e.g. `CUST-001`, `STAFF-001`, `system_cron`) of the acting customer, staff member, or worker process (avoiding raw, opaque UUIDs). Automatically populated via a reusable TypeORM `AuditColumnsSubscriber` and `BaseAuditEntity` reading `actorContext` from `AsyncLocalStorage`.
 - Supporting tables:
   - `idempotency_keys (subject, key, request_hash, status, locked_until, response, expires_at)` with `UNIQUE(subject, key)`: `status` is `'IN_PROGRESS'` or `'COMPLETED'`. While `IN_PROGRESS`, a short lease `locked_until = now() + interval '60 seconds'` prevents permanent deadlocks if the Node process crashes mid-flight. The transition to `'COMPLETED'` (with the serialized response JSON) is executed **within the same database transaction** as the appointment insert, making creation and idempotency completion 100% atomic.
   - Mock SSO tables `sso_clients`, `sso_users`. `outbox_events` is P2.
 
-### 5.1 Integrity constraints (PostgreSQL)
+### 5.1 Integrity constraints & Schema DDL (PostgreSQL 18)
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
--- period = [start_at, occupied_until)
-ALTER TABLE appointments ADD COLUMN period tstzrange
-  GENERATED ALWAYS AS (tstzrange(start_at, occupied_until, '[)')) STORED;
+-- 1. Dealerships & Staff
+CREATE TABLE IF NOT EXISTS dealerships (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    code VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    address VARCHAR(500) NOT NULL,
+    timezone VARCHAR(100) NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_dealership_tenant_code UNIQUE (tenant_id, code)
+);
+
+CREATE TABLE IF NOT EXISTS staff_members (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    dealership_id BIGINT NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
+    identity_subject UUID NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_staff_tenant_subject UNIQUE (tenant_id, identity_subject)
+);
+
+-- 2. Customers & Vehicles
+CREATE TABLE IF NOT EXISTS customers (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    identity_subject UUID NOT NULL,
+    code VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_customer_tenant_subject UNIQUE (tenant_id, identity_subject),
+    CONSTRAINT uq_customer_tenant_code UNIQUE (tenant_id, code)
+);
+
+CREATE TABLE IF NOT EXISTS vehicles (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    customer_id BIGINT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    vin VARCHAR(17) NOT NULL,
+    license_plate VARCHAR(20) NOT NULL,
+    make VARCHAR(100) NOT NULL,
+    model VARCHAR(100) NOT NULL,
+    year INT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_vehicle_tenant_vin UNIQUE (tenant_id, vin)
+);
+
+-- 3. Workshop Settings
+CREATE TABLE IF NOT EXISTS workshop_settings (
+    dealership_id BIGINT PRIMARY KEY REFERENCES dealerships(id) ON DELETE CASCADE,
+    tenant_id BIGINT NOT NULL,
+    timezone VARCHAR(100) NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
+    opens_at TIME NOT NULL DEFAULT '08:00:00',
+    closes_at TIME NOT NULL DEFAULT '18:00:00',
+    slot_minutes INT NOT NULL DEFAULT 30,
+    buffer_minutes INT NOT NULL DEFAULT 15,
+    grace_minutes INT NOT NULL DEFAULT 15,
+    lead_time_minutes INT NOT NULL DEFAULT 60,
+    horizon_days INT NOT NULL DEFAULT 30,
+    cancellation_cutoff_minutes INT NOT NULL DEFAULT 120,
+    requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
+    max_active_per_customer INT NOT NULL DEFAULT 3,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100)
+);
+
+-- 4. Skills & Service Types
+CREATE TABLE IF NOT EXISTS skills (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    code VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_skill_tenant_code UNIQUE (tenant_id, code)
+);
+
+CREATE TABLE IF NOT EXISTS service_types (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    skill_id BIGINT REFERENCES skills(id) ON DELETE SET NULL,
+    code VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    duration_minutes INT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_service_type_tenant_code UNIQUE (tenant_id, code)
+);
+
+-- 5. Service Bays & Technicians
+CREATE TABLE IF NOT EXISTS service_bays (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    dealership_id BIGINT NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
+    code VARCHAR(50) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_bay_dealership_code UNIQUE (dealership_id, code)
+);
+
+CREATE TABLE IF NOT EXISTS technicians (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    dealership_id BIGINT NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
+    code VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_technician_dealership_code UNIQUE (dealership_id, code)
+);
+
+CREATE TABLE IF NOT EXISTS technician_skills (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    technician_id BIGINT NOT NULL REFERENCES technicians(id) ON DELETE CASCADE,
+    skill_id BIGINT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100),
+    CONSTRAINT uq_tech_skill UNIQUE (technician_id, skill_id)
+);
+
+-- 6. Appointments & GiST Exclusion Constraints
+CREATE TABLE IF NOT EXISTS appointments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    reference_code VARCHAR(64) NOT NULL UNIQUE,
+    dealership_id BIGINT NOT NULL REFERENCES dealerships(id),
+    customer_id BIGINT NOT NULL REFERENCES customers(id),
+    vehicle_id BIGINT NOT NULL REFERENCES vehicles(id),
+    service_type_id BIGINT NOT NULL REFERENCES service_types(id),
+    service_type_ids BIGINT[] DEFAULT '{}',
+    service_bay_id BIGINT NOT NULL REFERENCES service_bays(id),
+    technician_id BIGINT NOT NULL REFERENCES technicians(id),
+    customer_name VARCHAR(255) NOT NULL,
+    vehicle_plate VARCHAR(50) NOT NULL,
+    vehicle_label VARCHAR(255) NOT NULL,
+    start_at TIMESTAMPTZ NOT NULL,
+    end_at TIMESTAMPTZ NOT NULL,
+    occupied_until TIMESTAMPTZ NOT NULL,
+    period tstzrange GENERATED ALWAYS AS (tstzrange(start_at, occupied_until, '[)')) STORED,
+    status VARCHAR(50) NOT NULL DEFAULT 'CONFIRMED',
+    version INT NOT NULL DEFAULT 1,
+    notes TEXT,
+    cancel_reason VARCHAR(255),
+    cancelled_at TIMESTAMPTZ,
+    cancelled_by VARCHAR(100),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100)
+);
 
 ALTER TABLE appointments ADD CONSTRAINT no_bay_overlap EXCLUDE USING gist
-  (service_bay_id WITH =, period WITH &&)
-  WHERE (status IN ('PENDING','CONFIRMED','CHECKED_IN','IN_PROGRESS'));
+    (service_bay_id WITH =, period WITH &&)
+    WHERE (status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'));
 
 ALTER TABLE appointments ADD CONSTRAINT no_technician_overlap EXCLUDE USING gist
-  (technician_id WITH =, period WITH &&)
-  WHERE (status IN ('PENDING','CONFIRMED','CHECKED_IN','IN_PROGRESS'));
+    (technician_id WITH =, period WITH &&)
+    WHERE (status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'));
 
 ALTER TABLE appointments ADD CONSTRAINT no_vehicle_overlap EXCLUDE USING gist
-  (vehicle_id WITH =, period WITH &&)
-  WHERE (status IN ('PENDING','CONFIRMED','CHECKED_IN','IN_PROGRESS'));
+    (vehicle_id WITH =, period WITH &&)
+    WHERE (status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'));
 
-CREATE INDEX appointments_dealership_start_idx ON appointments (dealership_id, start_at);
-CREATE INDEX appointments_customer_status_idx  ON appointments (customer_id, status);
-CREATE INDEX appointments_pending_expiry_idx   ON appointments (start_at) WHERE status = 'PENDING';
+-- 6.1 Appointment Details (Multi-Service Line Items)
+CREATE TABLE IF NOT EXISTS appointment_details (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL DEFAULT 1,
+    appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+    service_type_id BIGINT NOT NULL REFERENCES service_types(id),
+    code VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    duration_minutes INT NOT NULL,
+    price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    sequence_order INT NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by VARCHAR(100),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(100)
+);
+
+-- 7. Appointment Events Audit Trail
+CREATE TABLE IF NOT EXISTS appointment_events (
+    id BIGSERIAL PRIMARY KEY,
+    appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+    from_status VARCHAR(50),
+    to_status VARCHAR(50) NOT NULL,
+    actor_subject UUID,
+    actor_type VARCHAR(50) NOT NULL DEFAULT 'customer',
+    changes JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 8. Performance Indexes
+CREATE INDEX IF NOT EXISTS idx_appt_dealership_start ON appointments (dealership_id, start_at);
+CREATE INDEX IF NOT EXISTS idx_appt_customer_active ON appointments (customer_id)
+    WHERE status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS');
+CREATE INDEX IF NOT EXISTS idx_appt_pending_expiry ON appointments (start_at) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS idx_appt_details_appt_id ON appointment_details (appointment_id);
+CREATE INDEX IF NOT EXISTS idx_service_bays_dealership_active ON service_bays (dealership_id, id) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_technicians_dealership_active ON technicians (dealership_id, id) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_tech_skills_skill_tech ON technician_skills (skill_id, technician_id);
 ```
 
 The exclusion constraints make double-booking **impossible at the storage level**, independent of application code; they are the last line of defence behind the per-dealership advisory lock (§8).
@@ -428,12 +751,20 @@ stateDiagram-v2
     PENDING --> REJECTED: Staff rejects (releases)
     PENDING --> CANCELLED: Customer cancels (releases)
     PENDING --> EXPIRED: System worker job at start_at - cancellation cutoff (releases)
+    PENDING --> NO_SHOW: Staff, after start + grace (releases)
     CONFIRMED --> PENDING: Customer changes time, service, vehicle or technician (approval dealership)
     CONFIRMED --> CANCELLED: Customer cancels before cutoff (releases)
     CONFIRMED --> CHECKED_IN: Staff, appointment day, vehicle arrived
     CONFIRMED --> NO_SHOW: Staff, after start + grace (releases)
-    CHECKED_IN --> IN_PROGRESS: Staff
-    IN_PROGRESS --> COMPLETED: Staff
+    CHECKED_IN --> CANCELLED: Customer cancels before work starts (releases)
+    CHECKED_IN --> IN_PROGRESS: Staff starts service
+    IN_PROGRESS --> COMPLETED: Staff completes service
+    CONFIRMED --> SWAPPING: Staff atomic slot swap (transient)
+    PENDING --> SWAPPING: Staff atomic slot swap (transient)
+    CHECKED_IN --> SWAPPING: Staff atomic slot swap (transient)
+    SWAPPING --> CONFIRMED: Swap committed
+    SWAPPING --> PENDING: Swap committed
+    SWAPPING --> CHECKED_IN: Swap committed
     REJECTED --> [*]
     CANCELLED --> [*]
     EXPIRED --> [*]
@@ -441,7 +772,7 @@ stateDiagram-v2
     COMPLETED --> [*]
 ```
 
-Edits, staff reassignments, and slot swaps that keep the status are not drawn. All transitions are validated by a single `AppointmentStateMachine` (actor type + current status + time rules + `requires_approval`), and every change writes an `appointment_events` row.
+All status mutations are governed strictly by `AppointmentStateMachine` (validating actor type, current status, time boundaries, and dealership approval policy). Every state transition records an entry in `appointment_events` and emits a real-time broadcast via `pg_notify('appointment_events', payload)`. The transient `SWAPPING` state exists exclusively inside PostgreSQL transactions to allow safe slot exchanges under GiST exclusion constraints without domino rescheduling.
 
 ---
 
@@ -562,11 +893,11 @@ To ensure that appointments created or modified by a customer appear in real tim
 ```mermaid
 sequenceDiagram
     autonumber
-    actor C as Customer Screen (/demo/customer)
-    participant API as apps/scheduler-api (@Sse Controller)
-    participant DB as PostgreSQL 18 (LISTEN/NOTIFY)
-    participant Worker as apps/scheduler-worker (Expire Cron)
-    actor D as Dealership & Technician Board (/demo/dealership)
+    actor C as "Customer Screen (/demo/customer)"
+    participant API as "apps/scheduler-api (@Sse Controller)"
+    participant DB as "PostgreSQL 18 (LISTEN/NOTIFY)"
+    participant Worker as "apps/scheduler-worker (Expire Cron)"
+    actor D as "Dealership & Technician Board (/demo/dealership)"
 
     Note over API,DB: API maintains dedicated LISTEN appointment_events connection
     C->>API: GET /v1/appointments/stream (SSE subscribed for customer_id)
@@ -575,7 +906,7 @@ sequenceDiagram
     rect rgb(240, 248, 255)
     Note over C,DB: Booking Flow with Transactional NOTIFY
     C->>API: POST /v1/appointments
-    API->>DB: BEGIN -> Locks -> Insert Appointment -> SELECT pg_notify('appointment_events', payload) -> COMMIT
+    API->>DB: BEGIN → Acquire Locks → Insert Appointment & Event → SELECT pg_notify('appointment_events', payload) → COMMIT
     DB-->>API: NOTIFY delivered only after COMMIT
     API->>API: StreamService parses event, routes to RxJS Subject
     API-->>D: SSE Event: APPOINTMENT_CREATED (Board updates instantly)
@@ -584,8 +915,8 @@ sequenceDiagram
 
     rect rgb(255, 245, 238)
     Note over Worker,DB: Worker Expire Job (Cross-Process SSE Sync)
-    Worker->>DB: BEGIN -> Expire PENDING -> SELECT pg_notify('appointment_events', payload) -> COMMIT
-    DB-->>API: NOTIFY delivered to API listener connection across process boundary!
+    Worker->>DB: BEGIN → Expire PENDING → SELECT pg_notify('appointment_events', payload) → COMMIT
+    DB-->>API: NOTIFY delivered to API listener connection across process boundary
     API->>API: StreamService forwards to RxJS Subject
     API-->>D: SSE Event: APPOINTMENT_EXPIRED (Board removes expired booking)
     API-->>C: SSE Event: APPOINTMENT_EXPIRED (Customer sees EXPIRED status)
@@ -641,13 +972,15 @@ To sustain 10,000+ concurrent requests without database degradation, the system 
 flowchart TD
     Req["10,000 Concurrent Booking Requests"] --> T1["Tier 1: Edge & Gateway Layer<br/>(Rate Limiting & Redis Idempotency)"]
     T1 -- "Drop 3,000 bots/spam/retries" --> T2["Tier 2: Application Pre-check & Leveling<br/>(Redis Fast-Reject OR Message Queue)"]
-    T2 -- "Fast-reject 6,800 over-capacity requests (< 1ms)" --> T3["Tier 3: PostgreSQL Database Engine<br/>(Sharded Locks + PgBouncer)"]
+    T2 -- "Fast-reject 6,800 over-capacity requests (under 1ms)" --> T3["Tier 3: PostgreSQL Database Engine<br/>(Sharded Locks + PgBouncer)"]
     T3 --> OK["~200 Committed Bookings (100% capacity)"]
+
+    T2 -. "Strategy Options" .-> T2Detail
 
     subgraph T2Detail["Tier 2 Strategies"]
         direction TB
         A["Pattern A (Synchronous): Redis Atomic Capacity Counter<br/>(Lua script DECR remaining_capacity)"]
-        B["Pattern B (Asynchronous): Queue-based Leveling<br/>(202 Accepted -> RabbitMQ -> Worker -> SSE Push)"]
+        B["Pattern B (Asynchronous): Queue-based Leveling<br/>(202 Accepted → RabbitMQ → Worker → SSE Push)"]
     end
 ```
 
@@ -700,27 +1033,39 @@ Implemented once in `@app/common` via `ResponseEnvelopeInterceptor` (for 2xx res
 
 ### 9.2 Endpoints
 
-| Method | Path | Actor |
-| :--- | :--- | :--- |
-| GET | `/.well-known/openid-configuration`, `/oauth/jwks` | Public (mock SSO) |
-| POST | `/oauth/token` | OAuth client (mock SSO) |
-| GET | `/v1/me/vehicles` | Customer |
-| GET | `/v1/dealerships`, `/v1/service-types` | Customer, Staff |
-| GET | `/v1/dealerships/{id}/availability?date=&service_type_id=` | Customer |
-| GET | `/v1/dealerships/{id}/technicians?service_type_id=&start_at=` | Customer |
-| POST | `/v1/appointments` (`Idempotency-Key`) | Customer |
-| GET | `/v1/appointments`, `/v1/appointments/{id}` | Customer (own only) |
-| GET | `/v1/appointments/stream` (`@Sse()` text/event-stream) | Customer (real-time live updates for own appointments via `pg_notify`) |
-| PATCH | `/v1/appointments/{id}` (`If-Match`) | Customer |
-| POST | `/v1/appointments/{id}/cancel` (`If-Match`) | Customer |
-| GET | `/v1/staff/appointments?date=&status=&page=` | Staff (own dealership) |
-| GET | `/v1/staff/appointments/stream?technician_id=` (`@Sse()` text/event-stream) | Staff & Technician Board (real-time live updates via `pg_notify`) |
-| POST | `/v1/staff/appointments/{id}/reassign` (`If-Match`) | Staff (reassign technician / bay) |
-| POST | `/v1/staff/appointments/{id}/reschedule` (`If-Match`) | Staff (early arrival override: reschedule start_at, bay, technician) |
-| POST | `/v1/staff/appointments/swap` | Staff (own dealership, atomic slot swap) |
-| POST | `/v1/staff/appointments/{id}/{approve\|reject\|check-in\|start\|complete\|no-show}` (`If-Match`) | Staff |
-| GET | `/demo` (Customer Screen & Dealership/Technician Live Board) | Evaluator / Browser Demo |
-| GET | `/health/live`, `/health/ready` | Infrastructure |
+| Method | Path | Actor | Description |
+| :--- | :--- | :--- | :--- |
+| GET | `/.well-known/openid-configuration`, `/oauth/jwks` | Public | Mock SSO discovery and JWKS |
+| POST | `/oauth/token` | OAuth client | Exchange credentials for RS256 JWT access token |
+| GET | `/v1/me/vehicles` | Customer | List customer vehicles (supports pagination & filters) |
+| GET | `/v1/dealerships` | Customer, Staff | List dealerships (offset/cursor paginated, filter by `code`, `name`, Redis cached) |
+| GET | `/v1/service-types` | Customer, Staff | List service catalog (offset/cursor paginated, filter by `code`, `name`, Redis cached) |
+| GET | `/v1/dealerships/{id}/availability?date=&service_type_ids=` | Customer | Query consolidated slot availability grid for one or multiple services |
+| GET | `/v1/dealerships/{id}/technicians?service_type_ids=&start_at=` | Customer | List free qualified technicians for given services and slot |
+| POST | `/v1/appointments` (`Idempotency-Key`) | Customer | Create appointment with single/multiple `serviceTypeIds`, serialized under dealership advisory lock |
+| GET | `/v1/appointments` | Customer | List customer appointments (paginated, filter by `status`, `date`) |
+| GET | `/v1/appointments/{id}` | Customer | Get appointment details (with itemized `details` / services) |
+| GET | `/v1/appointments/stream` (`@Sse()`) | Customer | Real-time live SSE stream subscribed to customer appointments via `pg_notify` |
+| PATCH | `/v1/appointments/{id}` (`If-Match`) | Customer | Customer edit (reschedule startAt, change services/vehicle/technician/notes) |
+| POST | `/v1/appointments/{id}/cancel` (`If-Match`) | Customer | Soft cancel before cutoff |
+| GET | `/v1/staff/appointments?date=&status=&page=&limit=` | Staff | List dealership appointments (offset paginated, filter by `date`, `status`, `technicianId`) |
+| GET | `/v1/staff/appointments/stream?technician_id=` (`@Sse()`) | Staff | Real-time live SSE stream for dealership & technician board via `pg_notify` |
+| POST | `/v1/staff/appointments/{id}/reassign` (`If-Match`) | Staff | Reassign technician and/or bay with qualification and availability checks |
+| POST | `/v1/staff/appointments/{id}/reschedule` (`If-Match`) | Staff | Early arrival override: reschedule slot bypassing lead time |
+| POST | `/v1/staff/appointments/swap` | Staff | Atomic slot swap for two appointments with transient `SWAPPING` state |
+| POST | `/v1/staff/appointments/{id}/{approve\|reject\|check-in\|start\|complete\|no-show}` (`If-Match`) | Staff | Execute lifecycle state transition governed by `AppointmentStateMachine` |
+| GET | `/demo` | Evaluator / Browser | Live split-screen SSE demo: Customer View + Dealership/Technician Board |
+| GET | `/health/live`, `/health/ready` | Infrastructure | Health probes verifying Node event loop, PostgreSQL, and Redis connectivity |
+
+### 9.3 Core Engineering Directives & Standards
+
+1. **Mandatory Pagination for Listing APIs:** Every listing endpoint enforces pagination. Offset pagination (`page`, `limit`) is standard across all resources; cursor pagination (`cursor`, `limit`) is supported for continuous stream feeds. A strict upper bound (`limit <= 100`) is enforced on all page requests.
+2. **Redis Caching for Master Data:** Slow-changing entities (Dealerships, Service Types, Technicians, Bays) are cached in Redis using **Hash mechanisms** (`HSET`, `HGET`, `HGETALL`, `HDEL`), partitioned by domain namespace with automatic invalidation on updates.
+3. **Business `code` on Master Entities:** Every master data table (`dealerships`, `customers`, `skills`, `service_types`, `service_bays`, `technicians`, `appointment_details`) carries a unique, indexed `code` VARCHAR column for human/business domain identification alongside numeric surrogate primary keys.
+4. **Audit Fields with Actor Code/Name:** Audit fields (`created_by`, `updated_by`, `cancelled_by`) store the acting actor's business code or display name (e.g. `CUST-001`, `STAFF-001`, `system_cron`), eliminating opaque raw UUIDs.
+5. **Standard Listing Filters:** Listing endpoints provide optional, non-breaking filtering by `code`, `name`, and `date`/`start_at` via case-insensitive `ILIKE` queries.
+6. **Pure camelCase Architecture:** All API request bodies, query parameters, DTOs, and JSON responses conform to pure camelCase conventions, sanitized and unified via global normalizer middleware and class-validator decorators.
+7. **Rigorous End-to-End Verification:** Every endpoint and concurrency edge case is verified against real PostgreSQL and Redis instances via comprehensive Jest/Supertest suites and live cURL/Postman test collections.
 
 ---
 
