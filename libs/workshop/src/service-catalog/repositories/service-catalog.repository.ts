@@ -41,7 +41,8 @@ export class ServiceCatalogRepository {
     const qb = this.repo
       .createQueryBuilder('serviceType')
       .leftJoinAndSelect('serviceType.skill', 'skill')
-      .where('serviceType.tenantId = :tenantId', { tenantId });
+      .where('serviceType.tenantId = :tenantId', { tenantId })
+      .orderBy('serviceType.id', 'ASC');
 
     return CursorPaginationHelper.paginateQueryBuilder(
       qb,
@@ -57,7 +58,8 @@ export class ServiceCatalogRepository {
     const qb = this.repo
       .createQueryBuilder('serviceType')
       .leftJoinAndSelect('serviceType.skill', 'skill')
-      .where('serviceType.tenantId = :tenantId', { tenantId });
+      .where('serviceType.tenantId = :tenantId', { tenantId })
+      .orderBy('serviceType.id', 'ASC');
 
     if (params.code) {
       qb.andWhere('serviceType.code ILIKE :code', {

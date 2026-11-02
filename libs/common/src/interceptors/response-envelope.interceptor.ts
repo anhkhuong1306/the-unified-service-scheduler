@@ -57,6 +57,10 @@ export class ResponseEnvelopeInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       map((body: unknown): ApiResponseEnvelope => {
+        if (Boolean(response?.headersSent)) {
+          return body as ApiResponseEnvelope;
+        }
+
         const correlationId = RequestContextService.getCorrelationId();
 
         if (typeof response?.setHeader === 'function') {

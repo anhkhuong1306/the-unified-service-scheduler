@@ -1,8 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import {
-  DomainException,
-  ErrorCode,
   ForbiddenDomainException,
   LogSpan,
   VehicleAlreadyBookedException,
@@ -66,9 +64,17 @@ export class CreateAppointmentUseCase {
     }
     const tenantId = actor.tenantId;
 
+    const {
+      dealershipId,
+      vehicleId,
+      serviceTypeIds = [],
+      startAt,
+      technicianId: targetTechnicianId,
+    } = dto;
+
     // 1. Resolve Customer Identity & Vehicle Ownership OUTSIDE Database Transaction
     const customer = await this.customers.resolve(actor);
-    const vehicle = await this.customers.requireVehicle(dto.vehicleId, customer.id, tenantId);
+    const vehicle = await this.customers.requireVehicle(vehicleId, customer.id, tenantId);
 
     const requestPayloadHash = idempotencyKey
       ? hashRequest({ ...dto, customerId: customer.id })
@@ -95,22 +101,13 @@ export class CreateAppointmentUseCase {
 
         // 4. Strict Lock Hierarchy: Customer -> Dealership
         await this.locks.lockCustomer(manager, customer.id);
-        await this.locks.lockDealership(manager, dto.dealershipId);
+        await this.locks.lockDealership(manager, dealershipId);
 
         // 5. Load Settings & Service Types via Repositories
-        const settings = await this.settingsRepo.getByDealershipIdOrFail(dto.dealershipId, tenantId, manager);
-
-        if (!dto.serviceTypeIds || dto.serviceTypeIds.length === 0) {
-          throw new DomainException(
-            ErrorCode.VALIDATION_FAILED,
-            'serviceTypeIds must be a non-empty array of service type identifiers',
-            null,
-            400,
-          );
-        }
+        const settings = await this.settingsRepo.getByDealershipIdOrFail(dealershipId, tenantId, manager);
 
         const serviceTypes = await this.serviceTypeRepo.getByIdsOrFail(
-          dto.serviceTypeIds.map(String),
+          serviceTypeIds.map(String),
           tenantId,
           manager,
         );
@@ -129,13 +126,13 @@ export class CreateAppointmentUseCase {
         );
 
         // 7. Validate & Align Requested Slot via Domain Validator
-        const serviceSlot = this.slotValidator.resolveAndValidateSlot(settings, serviceTypes, dto.startAt);
+        const serviceSlot = this.slotValidator.resolveAndValidateSlot(settings, serviceTypes, startAt);
 
         // 8. Check for Overlapping Vehicle Appointments
         if (
           await this.availability.hasVehicleOverlap(
             manager,
-            dto.vehicleId,
+            vehicleId,
             serviceSlot.startAt,
             serviceSlot.occupiedUntil,
           )
@@ -146,10 +143,9 @@ export class CreateAppointmentUseCase {
         }
 
         // 9. Allocate Free Service Bay & Qualified Technician
-        const targetTechnicianId = dto.technicianId ?? dto.requestedTechnicianId;
         const { bayId: allocatedBayId, technicianId: allocatedTechnicianId } =
           await this.allocator.allocate(manager, {
-            dealershipId: dto.dealershipId,
+            dealershipId,
             skillId: requiredSkillIds[0] ?? null,
             skillIds: requiredSkillIds,
             requestedTechnicianId: targetTechnicianId,

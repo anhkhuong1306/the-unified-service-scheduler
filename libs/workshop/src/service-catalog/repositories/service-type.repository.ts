@@ -25,7 +25,8 @@ export class ServiceTypeRepository {
     const tenantId = params.tenantId ?? DEFAULT_TENANT_ID;
     const qb = this.repo
       .createQueryBuilder('service_type')
-      .where('service_type.tenantId = :tenantId', { tenantId });
+      .where('service_type.tenantId = :tenantId', { tenantId })
+      .orderBy('service_type.id', 'ASC');
 
     return CursorPaginationHelper.paginateQueryBuilder(
       qb,
@@ -40,7 +41,8 @@ export class ServiceTypeRepository {
     const tenantId = params.tenantId ?? DEFAULT_TENANT_ID;
     const qb = this.repo
       .createQueryBuilder('service_type')
-      .where('service_type.tenantId = :tenantId', { tenantId });
+      .where('service_type.tenantId = :tenantId', { tenantId })
+      .orderBy('service_type.id', 'ASC');
 
     if (params.code) {
       qb.andWhere('service_type.code ILIKE :code', {

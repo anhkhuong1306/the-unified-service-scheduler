@@ -10,9 +10,7 @@ describe('Common Utils & QueryParamNormalizerMiddleware', () => {
   describe('toCamelCase & transformKeysToCamelCase', () => {
     it('should convert snake_case and kebab-case strings to camelCase', () => {
       expect(toCamelCase('service_type_ids')).toBe('serviceTypeIds');
-      expect(toCamelCase('dealer_ship_id')).toBe('dealershipId');
       expect(toCamelCase('dealership_id')).toBe('dealershipId');
-      expect(toCamelCase('dealerShipId')).toBe('dealershipId');
       expect(toCamelCase('vehicle_id')).toBe('vehicleId');
       expect(toCamelCase('start_at')).toBe('startAt');
       expect(toCamelCase('customer_notes')).toBe('customerNotes');
@@ -24,7 +22,7 @@ describe('Common Utils & QueryParamNormalizerMiddleware', () => {
     it('should deeply convert nested objects and arrays to camelCase while preserving Dates', () => {
       const now = new Date();
       const input = {
-        dealer_ship_id: '123',
+        dealership_id: '123',
         filter_options: {
           service_type_ids: ['1', '2'],
           date_range: {
@@ -78,18 +76,18 @@ describe('Common Utils & QueryParamNormalizerMiddleware', () => {
       middleware = new QueryParamNormalizerMiddleware();
     });
 
-    it('should normalize query, params, and body from snake_case to camelCase across all fields without unwhitelisted keys', () => {
+    it('should generically normalize query, params, and body bidirectionally across all fields without hardcoded names', () => {
       const req: any = {
         query: {
-          dealer_ship_id: '1',
+          dealership_id: '1',
           service_type_ids: '1,2',
           per_page: 25,
         },
         params: {
-          dealer_ship_id: '10',
+          dealership_id: '10',
         },
         body: {
-          dealer_ship_id: '1',
+          dealership_id: '1',
           vehicle_id: '1',
           service_type_ids: ['1'],
           start_at: '2026-11-01T01:00:00.000Z',
@@ -102,22 +100,39 @@ describe('Common Utils & QueryParamNormalizerMiddleware', () => {
 
       expect(next).toHaveBeenCalledTimes(1);
 
-      // Query checks
+      // Query checks (both snake_case and camelCase available generically)
+      expect(req.query.dealership_id).toBe('1');
       expect(req.query.dealershipId).toBe('1');
+      expect(req.query.service_type_ids).toBe('1,2');
       expect(req.query.serviceTypeIds).toBe('1,2');
+      expect(req.query.per_page).toBe(25);
       expect(req.query.perPage).toBe(25);
       expect(req.query.limit).toBe(25);
 
       // Params checks
+      expect(req.params.dealership_id).toBe('10');
       expect(req.params.dealershipId).toBe('10');
 
-      // Body checks: strictly whitelist-friendly for CreateAppointmentDto
+      // Body checks (both snake_case and camelCase available, but only camelCase is enumerable for DTO validation)
+      expect(req.body.dealership_id).toBe('1');
       expect(req.body.dealershipId).toBe('1');
-      expect(req.body.dealerShipId).toBeUndefined();
+      expect(req.body.vehicle_id).toBe('1');
       expect(req.body.vehicleId).toBe('1');
+      expect(req.body.service_type_ids).toEqual(['1']);
       expect(req.body.serviceTypeIds).toEqual(['1']);
+      expect(req.body.start_at).toBe('2026-11-01T01:00:00.000Z');
       expect(req.body.startAt).toBe('2026-11-01T01:00:00.000Z');
+      expect(req.body.customer_notes).toBe('Regular maintenance');
       expect(req.body.customerNotes).toBe('Regular maintenance');
+
+      // Enumerable keys check for strict NestJS ValidationPipe (forbidNonWhitelisted: true)
+      expect(Object.keys(req.body)).toEqual([
+        'dealershipId',
+        'vehicleId',
+        'serviceTypeIds',
+        'startAt',
+        'customerNotes',
+      ]);
     });
   });
 });

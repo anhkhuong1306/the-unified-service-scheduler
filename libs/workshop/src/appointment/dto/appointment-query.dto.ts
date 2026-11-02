@@ -14,16 +14,9 @@ export class AppointmentQueryDto extends OffsetPaginationDto {
   public date?: string;
 
   @ApiPropertyOptional({
-    description: 'Filter by reference code (exact or partial)',
+    name: 'reference_code',
+    description: 'Filter by reference code (exact or partial, snake_case in request)',
     example: 'APT-20261101-ABCD',
-  })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public reference_code?: string;
-
-  @ApiPropertyOptional({
-    description: 'Filter by reference code (camelCase alias)',
   })
   @IsOptional()
   @Trim()
@@ -31,98 +24,60 @@ export class AppointmentQueryDto extends OffsetPaginationDto {
   public referenceCode?: string;
 
   @ApiPropertyOptional({
-    description: 'Filter by customer identifier or customer name',
+    name: 'customer_id',
+    description: 'Filter by customer identifier (snake_case in request)',
     example: '1',
   })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public customer?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by customer ID (snake_case alias)' })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public customer_id?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by customer ID (camelCase alias)' })
   @IsOptional()
   @Trim()
   @IsString()
   public customerId?: string;
 
   @ApiPropertyOptional({
-    description: 'Filter by technician identifier',
+    name: 'technician_id',
+    description: 'Filter by technician identifier (snake_case in request)',
     example: '1',
   })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public technician?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by technician ID (snake_case alias)' })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public technician_id?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by technician ID (camelCase alias)' })
   @IsOptional()
   @Trim()
   @IsString()
   public technicianId?: string;
 
   @ApiPropertyOptional({
-    description: 'Filter by service type identifier',
+    name: 'service_type_id',
+    description: 'Filter by service type identifier (snake_case in request)',
     example: '1',
   })
   @IsOptional()
   @Trim()
   @IsString()
-  public service_type?: string;
+  public serviceTypeId?: string;
 
   @ApiPropertyOptional({
-    description: 'Filter by service type identifier (camelCase alias)',
-  })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public serviceType?: string;
-
-  @ApiPropertyOptional({
-    description: 'Filter by dealership identifier',
+    name: 'dealership_id',
+    description: 'Filter by dealership identifier (snake_case in request)',
     example: '1',
   })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public dealership_id?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by dealership ID (camelCase alias)' })
   @IsOptional()
   @Trim()
   @IsString()
   public dealershipId?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by from date range (YYYY-MM-DD)' })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public from_date?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by from date range (camelCase alias)' })
+  @ApiPropertyOptional({
+    name: 'from_date',
+    description: 'Filter by from date range (YYYY-MM-DD, snake_case in request)',
+    example: '2026-11-01',
+  })
   @IsOptional()
   @Trim()
   @IsString()
   public fromDate?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by to date range (YYYY-MM-DD)' })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public to_date?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by to date range (camelCase alias)' })
+  @ApiPropertyOptional({
+    name: 'to_date',
+    description: 'Filter by to date range (YYYY-MM-DD, snake_case in request)',
+    example: '2026-11-30',
+  })
   @IsOptional()
   @Trim()
   @IsString()

@@ -1,6 +1,8 @@
 import { Controller, Get, Inject, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  ApiDocErrors,
+  ApiDocPaginated,
   ApiResponse,
   ApiResponseEnvelope,
   RequestContextService,
@@ -12,8 +14,10 @@ import {
   ICrmDirectoryContract,
 } from '@app/contracts';
 import { CustomerQueryDto } from './dto';
+import { SAMPLE_CUSTOMER } from './samples/crm-swagger.samples';
 
 @ApiTags('Customers')
+@ApiBearerAuth()
 @Controller({ path: 'v1/customers' })
 export class CustomersController {
   public constructor(
@@ -23,6 +27,12 @@ export class CustomersController {
 
   @Get()
   @ApiOperation({ summary: 'List customers with offset pagination and optional code/name filters' })
+  @ApiDocPaginated({
+    description: 'Customer directory list returned with offset pagination',
+    exampleItem: SAMPLE_CUSTOMER,
+    total: 1,
+  })
+  @ApiDocErrors([400, 401, 500])
   public async listCustomers(
     @Query() queryDto: CustomerQueryDto,
   ): Promise<ApiResponseEnvelope<CustomerSnapshotDto[]>> {

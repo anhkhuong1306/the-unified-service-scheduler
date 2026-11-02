@@ -3,27 +3,23 @@ import { IsOptional, IsString } from 'class-validator';
 import { Trim } from '@app/common';
 
 export class StaffStreamQueryDto {
-  @ApiPropertyOptional({ description: 'Filter live stream by dealership identifier (camelCase)' })
+  @ApiPropertyOptional({
+    name: 'dealership_id',
+    description: 'Filter live stream by dealership identifier (snake_case in request)',
+    example: '1',
+  })
   @IsOptional()
   @Trim()
   @IsString()
   public dealershipId?: string;
 
-  @ApiPropertyOptional({ description: 'Filter live stream by dealership identifier (snake_case alias)' })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public dealership_id?: string;
-
-  @ApiPropertyOptional({ description: 'Filter live stream by technician identifier (camelCase)' })
+  @ApiPropertyOptional({
+    name: 'technician_id',
+    description: 'Filter live stream by technician identifier (snake_case in request)',
+    example: '1',
+  })
   @IsOptional()
   @Trim()
   @IsString()
   public technicianId?: string;
-
-  @ApiPropertyOptional({ description: 'Filter live stream by technician identifier (snake_case alias)' })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public technician_id?: string;
 }

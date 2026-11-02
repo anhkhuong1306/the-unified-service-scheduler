@@ -15,22 +15,20 @@ export class TechnicianQueryDto extends OffsetPaginationDto {
   @IsString()
   public name?: string;
 
-  @ApiPropertyOptional({ description: 'Optional service type identifier filter' })
-  @IsOptional()
-  @IsString()
-  public service_type_id?: string;
-
-  @ApiPropertyOptional({ description: 'Optional service type identifier filter (camelCase alias)' })
+  @ApiPropertyOptional({
+    name: 'service_type_id',
+    description: 'Optional service type identifier filter (snake_case in request)',
+    example: '1',
+  })
   @IsOptional()
   @IsString()
   public serviceTypeId?: string;
 
-  @ApiPropertyOptional({ description: 'Optional slot start time ISO 8601 UTC' })
-  @IsOptional()
-  @IsString()
-  public start_at?: string;
-
-  @ApiPropertyOptional({ description: 'Optional slot start time ISO 8601 UTC (camelCase alias)' })
+  @ApiPropertyOptional({
+    name: 'start_at',
+    description: 'Optional slot start time ISO 8601 UTC (snake_case in request)',
+    example: '2026-11-01T08:00:00.000Z',
+  })
   @IsOptional()
   @IsString()
   public startAt?: string;

@@ -1,6 +1,8 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  ApiDocErrors,
+  ApiDocPaginated,
   ApiResponse,
   ApiResponseEnvelope,
   CursorPaginationHelper,
@@ -9,6 +11,7 @@ import {
 } from '@app/common';
 import { ServiceCatalogService, ServiceType } from '@app/workshop';
 import { ServiceTypeQueryDto } from './dto';
+import { SAMPLE_SERVICE_TYPE } from './samples/service-type-swagger.samples';
 
 @ApiTags('Service Catalog')
 @Controller({ path: 'v1/service-types' })
@@ -19,6 +22,12 @@ export class ServiceTypesController {
 
   @Get()
   @ApiOperation({ summary: 'List all active service types for the current tenant with offset pagination and optional code/name filters' })
+  @ApiDocPaginated({
+    description: 'Service packages returned with offset pagination',
+    exampleItem: SAMPLE_SERVICE_TYPE,
+    total: 3,
+  })
+  @ApiDocErrors([400, 500])
   public async listServiceTypes(
     @Query() queryDto: ServiceTypeQueryDto,
   ): Promise<ApiResponseEnvelope<ServiceType[]>> {

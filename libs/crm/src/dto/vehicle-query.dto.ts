@@ -4,30 +4,20 @@ import { OffsetPaginationDto, Trim } from '@app/common';
 
 export class VehicleQueryDto extends OffsetPaginationDto {
   @ApiPropertyOptional({
-    description: 'Filter by tenant ID',
+    name: 'tenant_id',
+    description: 'Filter by tenant ID (snake_case in request)',
     example: '1',
   })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public tenant_id?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by tenant ID (camelCase alias)' })
   @IsOptional()
   @Trim()
   @IsString()
   public tenantId?: string;
 
   @ApiPropertyOptional({
-    description: 'Filter by customer ID',
+    name: 'customer_id',
+    description: 'Filter by customer ID (snake_case in request)',
     example: '1',
   })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public customer_id?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by customer ID (camelCase alias)' })
   @IsOptional()
   @Trim()
   @IsString()
@@ -43,15 +33,10 @@ export class VehicleQueryDto extends OffsetPaginationDto {
   public code?: string;
 
   @ApiPropertyOptional({
-    description: 'Filter by license plate (partial or exact)',
+    name: 'license_plate',
+    description: 'Filter by license plate (partial or exact, snake_case in request)',
     example: '51A-123.45',
   })
-  @IsOptional()
-  @Trim()
-  @IsString()
-  public license_plate?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by license plate (camelCase alias)' })
   @IsOptional()
   @Trim()
   @IsString()

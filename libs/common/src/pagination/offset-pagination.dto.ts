@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
@@ -29,6 +29,7 @@ export class OffsetPaginationDto {
 
   @ApiPropertyOptional({
     description: 'Number of records per page (snake_case alias for limit)',
+    example: 10,
   })
   @IsOptional()
   @Type(() => Number)
@@ -37,9 +38,7 @@ export class OffsetPaginationDto {
   @Max(100)
   public per_page?: number;
 
-  @ApiPropertyOptional({
-    description: 'Number of records per page (camelCase alias for limit)',
-  })
+  @ApiHideProperty()
   @IsOptional()
   @Type(() => Number)
   @IsInt()

@@ -240,9 +240,10 @@ export class UpdateAppointmentUseCase {
         changes.technicianId = dto.technicianId;
       }
 
-      if (dto.notes !== undefined) {
-        appointment.notes = dto.notes;
-        changes.notes = dto.notes;
+      const targetNotes = dto.notes !== undefined ? dto.notes : dto.customerNotes;
+      if (targetNotes !== undefined) {
+        appointment.notes = targetNotes;
+        changes.notes = targetNotes;
       }
 
       appointment.updated_by = actorIdentifier;

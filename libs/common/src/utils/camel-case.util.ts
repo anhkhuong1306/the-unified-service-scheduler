@@ -4,13 +4,8 @@
  */
 export function toCamelCase(str: string): string {
   if (!str) return str;
-  // Normalize domain compound words before conversion (e.g. dealer_ship_id -> dealership_id)
-  let normalizedStr = str.replace(/dealer_ship/gi, 'dealership');
-  if (/^dealerShip/i.test(normalizedStr)) {
-    normalizedStr = 'dealership' + normalizedStr.slice(10);
-  }
-
-  return normalizedStr
+  return str
+    .replace(/dealer[-_]?ship/gi, 'dealership')
     .replace(/^_+/, '')
     .replace(/[-_]+([a-zA-Z0-9])/g, (_, char) => char.toUpperCase())
     .replace(/^([A-Z])/, (char) => char.toLowerCase());

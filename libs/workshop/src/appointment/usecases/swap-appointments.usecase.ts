@@ -49,8 +49,8 @@ export class SwapAppointmentsUseCase {
       throw new ForbiddenDomainException('Only staff or system can swap appointments');
     }
 
-    const idA = dto.appointmentIdA || dto.appointmentId1 || dto.appointment_id_1;
-    const idB = dto.appointmentIdB || dto.appointmentId2 || dto.appointment_id_2;
+    const idA = dto.appointmentIdA || dto.appointmentId1;
+    const idB = dto.appointmentIdB || dto.appointmentId2;
 
     if (!idA || !idB) {
       throw new DomainException(

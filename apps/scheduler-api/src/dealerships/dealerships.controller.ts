@@ -5,8 +5,11 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import {
+  ApiDocErrors,
+  ApiDocPaginated,
+  ApiDocSuccess,
   ApiResponse,
   ApiResponseEnvelope,
   CursorPaginationHelper,
@@ -27,6 +30,7 @@ import {
   DealershipQueryDto,
   TechnicianQueryDto,
 } from './dto';
+import { SAMPLE_DEALERSHIP, SAMPLE_TECHNICIAN } from './samples/dealership-swagger.samples';
 
 /**
  * HTTP Controller handling Dealership discovery, slot availability queries,
@@ -44,6 +48,12 @@ export class DealershipsController {
 
   @Get()
   @ApiOperation({ summary: 'List all operational dealerships for the active tenant with offset pagination and optional code/name filters' })
+  @ApiDocPaginated({
+    description: 'Dealerships listed successfully with offset pagination',
+    exampleItem: SAMPLE_DEALERSHIP,
+    total: 1,
+  })
+  @ApiDocErrors([400, 500])
   public async listDealerships(
     @Query() queryDto: DealershipQueryDto,
   ): Promise<ApiResponseEnvelope<Dealership[]>> {
@@ -67,23 +77,32 @@ export class DealershipsController {
     summary:
       'Retrieve all available slots and service types for a dealership with optional filters (service_type_ids, technician_ids, date) and offset pagination',
   })
+  @ApiParam({ name: 'id', description: 'Dealership identifier', example: '1' })
+  @ApiDocSuccess({
+    status: 200,
+    description: 'Available slot grid returned successfully',
+    example: {
+      dealership_id: '1',
+      date: '2026-11-03',
+      available_slots: [
+        {
+          start_at: '2026-11-03T08:00:00.000Z',
+          end_at: '2026-11-03T08:30:00.000Z',
+          is_available: true,
+          available_technicians_count: 2,
+        },
+      ],
+    },
+  })
+  @ApiDocErrors([400, 404, 500])
   public async getAvailableSlots(
     @Param('id') id: string,
     @Query() queryDto: AvailableSlotsQueryDto,
   ): Promise<ApiResponseEnvelope<DealershipAvailableSlotsResponseDto>> {
     const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
 
-    const serviceTypeIds =
-      queryDto.service_type_ids ??
-      queryDto.serviceTypeIds ??
-      (queryDto.service_type_id ? [queryDto.service_type_id] : undefined) ??
-      (queryDto.serviceTypeId ? [queryDto.serviceTypeId] : undefined);
-
-    const technicianIds =
-      queryDto.technician_ids ??
-      queryDto.technicianIds ??
-      (queryDto.technician_id ? [queryDto.technician_id] : undefined) ??
-      (queryDto.technicianId ? [queryDto.technicianId] : undefined);
+    const serviceTypeIds = queryDto.serviceTypeIds;
+    const technicianIds = queryDto.technicianIds;
 
     const result = await this.availabilityService.getDealershipAvailableSlots(
       tenantId,
@@ -106,19 +125,26 @@ export class DealershipsController {
     summary:
       'Query technicians for a specific dealership with optional filters (code, name, slot) and offset pagination',
   })
+  @ApiParam({ name: 'id', description: 'Dealership identifier', example: '1' })
+  @ApiDocPaginated({
+    description: 'Technicians listed successfully',
+    exampleItem: SAMPLE_TECHNICIAN,
+    total: 1,
+  })
+  @ApiDocErrors([400, 500])
   public async getTechnicians(
     @Param('id') id: string,
     @Query() queryDto: TechnicianQueryDto,
   ): Promise<ApiResponseEnvelope<Array<Technician | AvailableTechnicianDto>>> {
     const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
-    const serviceTypeId = queryDto.service_type_id ?? queryDto.serviceTypeId;
+    const { serviceTypeId, startAt } = queryDto;
 
-    if (serviceTypeId && queryDto.start_at) {
+    if (serviceTypeId && startAt) {
       const slotResult = await this.availabilityService.getTechniciansForSlot(
         tenantId,
         id,
         serviceTypeId,
-        queryDto.start_at,
+        startAt,
       );
 
       if (queryDto.cursor) {

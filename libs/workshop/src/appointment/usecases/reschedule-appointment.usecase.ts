@@ -88,7 +88,7 @@ export class RescheduleAppointmentUseCase {
         manager,
       );
 
-      const targetStart = dto.newStartAt || dto.startAt || dto.start_at;
+      const targetStart = dto.startAt;
       if (!targetStart) {
         throw new ValidationFailedException('New scheduled start time is required');
       }
@@ -119,7 +119,7 @@ export class RescheduleAppointmentUseCase {
         new Set(serviceTypes.map((st) => st.skillId).filter(Boolean) as string[]),
       );
 
-      const targetTechId = dto.requestedTechnicianId ?? appointment.technicianId;
+      const targetTechId = dto.technicianId ?? appointment.technicianId;
       const { bayId, technicianId } = await this.allocator.allocate(manager, {
         dealershipId: appointment.dealershipId,
         skillId: requiredSkillIds[0] ?? null,

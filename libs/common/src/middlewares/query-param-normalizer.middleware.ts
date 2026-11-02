@@ -1,9 +1,79 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
-import { transformKeysToCamelCase } from '../utils/camel-case.util';
+import { toCamelCase, transformKeysToCamelCase } from '../utils/camel-case.util';
+import { toSnakeCase, transformKeysToSnakeCase } from '../utils/snake-case.util';
 
 /**
- * Normalizes query parameters, route parameters, and request body from snake_case to camelCase
- * across all APIs for seamless NestJS DTO mapping, while preventing forbidNonWhitelisted validation errors.
+ * Generically normalizes a key-value dictionary so all keys exist in both
+ * camelCase and snake_case without hardcoding any specific domain entity.
+ */
+function normalizeDictionary(target: Record<string, unknown>): void {
+  if (!target || typeof target !== 'object' || Array.isArray(target)) {
+    return;
+  }
+
+  const keys = Object.keys(target);
+  for (const key of keys) {
+    const value = target[key];
+    const camelKey = toCamelCase(key);
+
+    if (camelKey !== key) {
+      if (target[camelKey] === undefined) {
+        target[camelKey] = value;
+      }
+      try {
+        delete target[key];
+        Object.defineProperty(target, key, {
+          value,
+          enumerable: false,
+          configurable: true,
+          writable: true,
+        });
+      } catch {
+        // Fallback for non-configurable objects
+      }
+    }
+
+    // Recursively normalize nested plain objects
+    const resolvedValue = target[camelKey] ?? value;
+    if (resolvedValue && typeof resolvedValue === 'object' && !Array.isArray(resolvedValue) && !(resolvedValue instanceof Date)) {
+      normalizeDictionary(resolvedValue as Record<string, unknown>);
+    }
+  }
+
+  // Generic pagination parameter alias: per_page / perPage <-> limit
+  if (target['per_page'] !== undefined && target['limit'] === undefined) {
+    target['limit'] = target['per_page'];
+  }
+  if (target['perPage'] !== undefined && target['limit'] === undefined) {
+    target['limit'] = target['perPage'];
+  }
+  if (target['limit'] !== undefined && target['per_page'] === undefined) {
+    try {
+      Object.defineProperty(target, 'per_page', {
+        value: target['limit'],
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      });
+    } catch {}
+  }
+  if (target['limit'] !== undefined && target['perPage'] === undefined) {
+    try {
+      Object.defineProperty(target, 'perPage', {
+        value: target['limit'],
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      });
+    } catch {}
+  }
+}
+
+/**
+ * Universal Normalizer Middleware.
+ * Generically normalizes query parameters, route parameters, and request body
+ * to provide bidirectional access (both camelCase and snake_case) across all APIs.
+ * Eliminates domain-specific hardcoding and ensures seamless DTO validation.
  */
 @Injectable()
 export class QueryParamNormalizerMiddleware implements NestMiddleware {
@@ -16,37 +86,16 @@ export class QueryParamNormalizerMiddleware implements NestMiddleware {
     res: unknown,
     next: () => void,
   ): void {
-    // 1. Normalize query parameters (convert all snake_case keys to camelCase)
     if (req.query && typeof req.query === 'object') {
-      const camelQuery = transformKeysToCamelCase<Record<string, unknown>>(req.query);
-      req.query = { ...req.query, ...camelQuery };
-
-      // Dealership alias compatibility
-      if (req.query['dealerShipId'] !== undefined && req.query['dealershipId'] === undefined) {
-        req.query['dealershipId'] = req.query['dealerShipId'];
-      }
-      if (req.query['dealer_ship_id'] !== undefined && req.query['dealership_id'] === undefined) {
-        req.query['dealership_id'] = req.query['dealer_ship_id'];
-      }
-
-      // Pagination semantic alias: per_page / perPage -> limit
-      if (req.query['perPage'] !== undefined && req.query['limit'] === undefined) {
-        req.query['limit'] = req.query['perPage'];
-      }
-      if (req.query['per_page'] !== undefined && req.query['limit'] === undefined) {
-        req.query['limit'] = req.query['per_page'];
-      }
+      normalizeDictionary(req.query);
     }
 
-    // 2. Normalize route parameters
-    if (req.params && typeof req.params === 'object' && Object.keys(req.params).length > 0) {
-      const camelParams = transformKeysToCamelCase<Record<string, unknown>>(req.params);
-      req.params = { ...req.params, ...camelParams };
+    if (req.params && typeof req.params === 'object') {
+      normalizeDictionary(req.params);
     }
 
-    // 3. Normalize request body
     if (req.body && typeof req.body === 'object') {
-      req.body = transformKeysToCamelCase<Record<string, unknown>>(req.body);
+      normalizeDictionary(req.body);
     }
 
     next();

@@ -1,7 +1,13 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { ApiResponse, ApiResponseEnvelope, Public } from '@app/common';
+import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiDocSuccess,
+  ApiResponse,
+  ApiResponseEnvelope,
+  Public,
+} from '@app/common';
 import { TokenRequestDto, TokenResponse } from './dto';
+import { SAMPLE_TOKEN_RESPONSE, TOKEN_REQUEST_BODY_EXAMPLES } from './samples/auth-swagger.samples'
 
 @ApiTags('Authentication & Token')
 @Controller({ path: 'v1/auth' })
@@ -12,6 +18,16 @@ export class AuthController {
   @ApiOperation({
     summary: 'Generate a valid JWT Bearer token for testing API requests in Postman or cURL',
   })
+  @ApiBody({
+    type: TokenRequestDto,
+    description: 'Token request parameters',
+    examples: TOKEN_REQUEST_BODY_EXAMPLES,
+  })
+  @ApiDocSuccess({
+    status: 200,
+    description: 'JWT Bearer token generated successfully',
+    example: SAMPLE_TOKEN_RESPONSE,
+  })
   public generateTokenPost(@Body() dto: TokenRequestDto): ApiResponseEnvelope<TokenResponse> {
     return this.createToken(dto);
   }
@@ -21,12 +37,17 @@ export class AuthController {
   @ApiOperation({
     summary: 'Generate a valid JWT Bearer token via GET request for quick browser/cURL testing',
   })
+  @ApiDocSuccess({
+    status: 200,
+    description: 'JWT Bearer token generated successfully',
+    example: SAMPLE_TOKEN_RESPONSE,
+  })
   public generateTokenGet(@Query() dto: TokenRequestDto): ApiResponseEnvelope<TokenResponse> {
     return this.createToken(dto);
   }
 
   private createToken(dto: TokenRequestDto): ApiResponseEnvelope<TokenResponse> {
-    const sub = dto.sub || dto.userId || dto.user_id || 'a1111111-1111-1111-1111-111111111111';
+    const sub = dto.userId || dto.sub || 'a1111111-1111-1111-1111-111111111111';
     let role = dto.role || 'customer';
     if (dto.roles) {
       if (Array.isArray(dto.roles) && dto.roles.length > 0) {
@@ -35,7 +56,7 @@ export class AuthController {
         role = dto.roles as any;
       }
     }
-    const tenantId = Number(dto.tenant_id ?? dto.tenantId ?? 1);
+    const tenantId = Number(dto.tenantId ?? 1);
 
     const header = { alg: 'HS256', typ: 'JWT' };
     const payload = {
