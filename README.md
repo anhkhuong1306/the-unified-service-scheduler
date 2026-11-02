@@ -4,6 +4,21 @@
 
 ---
 
+## Table of Contents
+
+- [1. Architectural Overview](#1-architectural-overview)
+- [2. Prerequisites](#2-prerequisites)
+- [3. Quick Start with Docker Compose](#3-quick-start-with-docker-compose)
+  - [Step 1: Prepare Environment Configuration](#step-1-prepare-environment-configuration)
+  - [Step 2: Launch the Services](#step-2-launch-the-services)
+  - [Step 3: Initialize Database (On-Demand)](#step-3-initialize-database-on-demand)
+  - [Step 4: Verify Service Health](#step-4-verify-service-health)
+- [4. CLI Commands & Scripts](#4-cli-commands-scripts)
+- [5. Unified Response Envelope](#5-unified-response-envelope)
+- [6. Detailed System Design Documentation](#6-detailed-system-design-documentation)
+
+---
+
 ## 1. Architectural Overview
 
 The project is structured as a **Modular Monolith** using the official **NestJS Monorepo** layout. It clearly separates **physical deployment entry points (`apps/`)** from **domain bounded contexts (`libs/`)**:
@@ -163,5 +178,5 @@ All API endpoints produce a consistent JSON envelope:
 ---
 
 ## 6. Detailed System Design Documentation
-- [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md) — Comprehensive technical architecture specification (v4).
+- [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md) — Comprehensive technical architecture specification (v5 — NestJS Monorepo Architecture).
 - [SYSTEM_DESIGN_VI.md](./SYSTEM_DESIGN_VI.md) — Detailed Vietnamese explanatory guide aligned 1-to-1 with the English design document.
