@@ -1,24 +1,89 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { ACTIVE_STATUSES } from '../types/appointment.constants';
+import { LogSpan } from '@app/common';
 
 @Injectable()
 export class AppointmentAvailabilityRepository {
   private readonly activeStatuses = [...ACTIVE_STATUSES];
+
+  public async isBayFree(
+    m: EntityManager,
+    bayId: string,
+    from: Date,
+    to: Date,
+    excludeAppointmentId?: string,
+  ): Promise<boolean> {
+    const rows = await m.query<{ one: number }[]>(
+      `SELECT 1 AS one FROM service_bays b
+       WHERE b.id = $1 AND b.is_active = TRUE
+         AND NOT EXISTS (
+           SELECT 1 FROM appointments a
+           WHERE a.service_bay_id = b.id
+             AND ($5::uuid IS NULL OR a.id != $5::uuid)
+             AND a.status = ANY($4::text[])
+             AND a.period && tstzrange($2::timestamptz, $3::timestamptz, '[)')
+         )
+       LIMIT 1`,
+      [bayId, from.toISOString(), to.toISOString(), this.activeStatuses, excludeAppointmentId ?? null],
+    );
+    return rows.length > 0;
+  }
+
+  public async isTechnicianFree(
+    m: EntityManager,
+    technicianId: string,
+    from: Date,
+    to: Date,
+    excludeAppointmentId?: string,
+  ): Promise<boolean> {
+    const rows = await m.query<{ one: number }[]>(
+      `SELECT 1 AS one FROM technicians t
+       WHERE t.id = $1 AND t.is_active = TRUE
+         AND NOT EXISTS (
+           SELECT 1 FROM appointments a
+           WHERE a.technician_id = t.id
+             AND ($5::uuid IS NULL OR a.id != $5::uuid)
+             AND a.status = ANY($4::text[])
+             AND a.period && tstzrange($2::timestamptz, $3::timestamptz, '[)')
+         )
+       LIMIT 1`,
+      [technicianId, from.toISOString(), to.toISOString(), this.activeStatuses, excludeAppointmentId ?? null],
+    );
+    return rows.length > 0;
+  }
+
+  public async technicianHasRequiredSkills(
+    m: EntityManager,
+    technicianId: string,
+    requiredSkillIds: (string | number)[],
+  ): Promise<boolean> {
+    if (requiredSkillIds.length === 0) return true;
+    const rawSkills = requiredSkillIds.map(Number);
+    const rows = await m.query<{ cnt: number }[]>(
+      `SELECT COUNT(DISTINCT ts.skill_id)::int AS cnt
+       FROM technician_skills ts
+       WHERE ts.technician_id = $1 AND ts.skill_id = ANY($2::bigint[])`,
+      [Number(technicianId), rawSkills],
+    );
+    return (rows[0]?.cnt ?? 0) === rawSkills.length;
+  }
 
   public async hasVehicleOverlap(
     m: EntityManager,
     vehicleId: string,
     from: Date,
     to: Date,
+    excludeAppointmentId?: string,
   ): Promise<boolean> {
     const rows = await m.query<{ one: number }[]>(
-      `SELECT 1 AS one FROM appointments
+      `SELECT appointments.* AS one FROM appointments
        WHERE vehicle_id = $1
+         AND ($5::uuid IS NULL OR id != $5::uuid)
          AND status = ANY($4::text[])
          AND period && tstzrange($2::timestamptz, $3::timestamptz, '[)')
        LIMIT 1`,
-      [vehicleId, from.toISOString(), to.toISOString(), this.activeStatuses],
+      [vehicleId, from.toISOString(), to.toISOString(), this.activeStatuses, excludeAppointmentId ?? null],
     );
     return rows.length > 0;
   }
@@ -28,6 +93,7 @@ export class AppointmentAvailabilityRepository {
     dealershipId: string,
     from: Date,
     to: Date,
+    excludeAppointmentId?: string,
   ): Promise<string | null> {
     const rows = await m.query<{ id: string }[]>(
       `SELECT b.id FROM service_bays b
@@ -35,12 +101,13 @@ export class AppointmentAvailabilityRepository {
          AND NOT EXISTS (
            SELECT 1 FROM appointments a
            WHERE a.service_bay_id = b.id
+             AND ($5::uuid IS NULL OR a.id != $5::uuid)
              AND a.status = ANY($4::text[])
              AND a.period && tstzrange($2::timestamptz, $3::timestamptz, '[)')
          )
        ORDER BY b.id ASC
        LIMIT 1`,
-      [dealershipId, from.toISOString(), to.toISOString(), this.activeStatuses],
+      [dealershipId, from.toISOString(), to.toISOString(), this.activeStatuses, excludeAppointmentId ?? null],
     );
     return rows[0]?.id ?? null;
   }
@@ -54,6 +121,7 @@ export class AppointmentAvailabilityRepository {
       requestedId?: string;
       from: Date;
       to: Date;
+      excludeAppointmentId?: string;
     },
   ): Promise<string | null> {
     const rawSkills = p.skillIds && p.skillIds.length > 0
@@ -76,6 +144,7 @@ export class AppointmentAvailabilityRepository {
          AND NOT EXISTS (
            SELECT 1 FROM appointments a
            WHERE a.technician_id = t.id
+             AND ($8::uuid IS NULL OR a.id != $8::uuid)
              AND a.status = ANY($7::text[])
              AND a.period && tstzrange($5::timestamptz, $6::timestamptz, '[)')
          )
@@ -89,6 +158,7 @@ export class AppointmentAvailabilityRepository {
         p.from.toISOString(),
         p.to.toISOString(),
         this.activeStatuses,
+        p.excludeAppointmentId ?? null,
       ],
     );
     return rows[0]?.id ?? null;

@@ -7,4 +7,6 @@ export enum AppointmentStatus {
   CANCELLED = 'CANCELLED',
   REJECTED = 'REJECTED',
   NO_SHOW = 'NO_SHOW',
+  EXPIRED = 'EXPIRED',
+  SWAPPING = 'SWAPPING',
 }

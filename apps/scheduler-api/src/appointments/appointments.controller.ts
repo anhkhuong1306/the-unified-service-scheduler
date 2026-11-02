@@ -6,27 +6,35 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  MessageEvent,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
+  Sse,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { from, Observable, switchMap } from 'rxjs';
 import {
   ApiResponse,
   ApiResponseEnvelope,
   CursorPaginationDto,
   DEFAULT_TENANT_ID,
   RequestContextService,
+  ValidationFailedException,
 } from '@app/common';
 import {
   Appointment,
   AppointmentService,
-  AvailabilityResponseDto,
+  AppointmentStreamService,
   CancelAppointmentUseCase,
   CreateAppointmentUseCase,
+  DealershipAvailableSlotsResponseDto,
   ResourceAvailabilityService,
+  UpdateAppointmentDto,
+  UpdateAppointmentUseCase,
 } from '@app/workshop';
 import {
   AppointmentAvailabilityQueryDto,
@@ -42,18 +50,55 @@ export class AppointmentsController {
     private readonly availabilityService: ResourceAvailabilityService,
     private readonly createAppointmentUseCase: CreateAppointmentUseCase,
     private readonly cancelAppointmentUseCase: CancelAppointmentUseCase,
+    private readonly updateAppointmentUseCase: UpdateAppointmentUseCase,
     private readonly appointmentService: AppointmentService,
+    private readonly streamService: AppointmentStreamService,
   ) {}
 
   @Get('availability')
-  @ApiOperation({ summary: 'Query slot grid availability for a given dealership, service type, and date' })
+  @ApiOperation({
+    summary:
+      'Query slot grid availability for a given dealership with optional filters (service_type_ids, technician_ids, date) and offset pagination',
+  })
   public async getAvailability(
     @Query() queryDto: AppointmentAvailabilityQueryDto,
-  ): Promise<AvailabilityResponseDto> {
+  ): Promise<ApiResponseEnvelope<DealershipAvailableSlotsResponseDto>> {
     const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
-    const dealershipId = queryDto.dealershipId ?? queryDto.dealership_id!;
-    const serviceTypeId = queryDto.serviceTypeId ?? queryDto.service_type_id!;
-    return this.availabilityService.getAvailability(tenantId, dealershipId, serviceTypeId, queryDto.date);
+    const dealershipId =
+      queryDto.dealer_ship_id ?? queryDto.dealership_id ?? queryDto.dealershipId;
+
+    if (!dealershipId) {
+      throw new ValidationFailedException(
+        'dealer_ship_id (or dealership_id) is required to query availability',
+      );
+    }
+
+    const serviceTypeIds =
+      queryDto.service_type_ids ??
+      queryDto.serviceTypeIds ??
+      (queryDto.service_type_id ? [queryDto.service_type_id] : undefined) ??
+      (queryDto.serviceTypeId ? [queryDto.serviceTypeId] : undefined);
+
+    const technicianIds =
+      queryDto.technician_ids ??
+      queryDto.technicianIds ??
+      (queryDto.technician_id ? [queryDto.technician_id] : undefined) ??
+      (queryDto.technicianId ? [queryDto.technicianId] : undefined);
+
+    const result = await this.availabilityService.getDealershipAvailableSlots(
+      tenantId,
+      dealershipId,
+      {
+        date: queryDto.date,
+        serviceTypeIds,
+        technicianIds,
+        page: queryDto.page,
+        limit: queryDto.limit,
+      },
+    );
+
+    const { meta, ...data } = result;
+    return ApiResponse.build(200, null, data, 'OK', meta);
   }
 
   @Post()
@@ -111,12 +156,8 @@ export class AppointmentsController {
     // Enforce data isolation: if actor is customer, strictly restrict to their own customerId
     let enforcedCustomerId: string | undefined;
     if (actorType === 'customer') {
-      try {
-        const customer = await this.appointmentService.resolveCustomer(actorSub, tenantId);
-        enforcedCustomerId = customer.id;
-      } catch {
-        // Customer resolution fallback
-      }
+      const customer = await this.appointmentService.resolveCustomer(actorSub, tenantId);
+      enforcedCustomerId = customer.id;
     }
 
     const result = await this.appointmentService.listAppointmentsOffsetPaginated(queryDto, {
@@ -145,11 +186,67 @@ export class AppointmentsController {
     return ApiResponse.cursorPaginated(result.items, result.meta);
   }
 
+  @Sse('stream')
+  @ApiOperation({ summary: 'Real-time SSE event stream for authenticated customer' })
+  public stream(): Observable<MessageEvent> {
+    const actorSub = RequestContextService.getActorSub();
+    if (!actorSub) {
+      throw new UnauthorizedException('Missing authentication token or credentials');
+    }
+    const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
+    return from(this.appointmentService.resolveCustomer(actorSub, tenantId)).pipe(
+      switchMap((customer) => this.streamService.streamForCustomer(customer.id, tenantId)),
+    );
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get details of a specific service appointment' })
   public async getById(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): Promise<Appointment> {
+    const actorSub = RequestContextService.getActorSub();
+    if (!actorSub) {
+      throw new UnauthorizedException('Missing authentication token or credentials');
+    }
+    const actorType = RequestContextService.getActorType();
     const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
-    return this.appointmentService.getAppointmentById(id, undefined, tenantId);
+
+    let customerId: string | undefined;
+    if (actorType === 'customer') {
+      const customer = await this.appointmentService.resolveCustomer(actorSub, tenantId);
+      customerId = customer.id;
+    }
+
+    return this.appointmentService.getAppointmentById(id, customerId, tenantId);
+  }
+
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Customer update scheduled appointment details with optimistic lock protection' })
+  public async update(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() dto: UpdateAppointmentDto,
+    @Headers('if-match') ifMatchHeader?: string,
+  ): Promise<Appointment> {
+    const actorSub = RequestContextService.getActorSub();
+    if (!actorSub) {
+      throw new UnauthorizedException('Missing authentication token or credentials');
+    }
+    const actorType = RequestContextService.getActorType();
+    const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
+
+    if (ifMatchHeader && dto.version === undefined) {
+      const parsedVersion = parseInt(ifMatchHeader.replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(parsedVersion)) {
+        dto.version = parsedVersion;
+      }
+    }
+
+    const updated = await this.updateAppointmentUseCase.execute(
+      id,
+      dto,
+      { actorSub, actorType, tenantId },
+    );
+
+    return this.appointmentService.enrichAppointmentDetails(updated, tenantId);
   }
 
   @Delete(':id')

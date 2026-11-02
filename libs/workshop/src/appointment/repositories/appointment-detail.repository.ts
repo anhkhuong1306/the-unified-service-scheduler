@@ -4,6 +4,13 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AppointmentDetail } from '../entities/appointment-detail.entity';
 import { HydratedServiceTypeDetail } from '../types/appointment-hydration.params';
 
+interface RawServiceTypeRow {
+  id: string | number;
+  code: string;
+  name: string;
+  durationMinutes: string | number;
+}
+
 @Injectable()
 export class AppointmentDetailRepository {
   public constructor(
@@ -23,11 +30,11 @@ export class AppointmentDetailRepository {
     if (!typeIds || typeIds.length === 0) {
       return [];
     }
-    const rawTypes = await this.dataSource.query(
+    const rawTypes = await this.dataSource.query<RawServiceTypeRow[]>(
       `SELECT id, code, name, duration_minutes as "durationMinutes" FROM service_types WHERE id = ANY($1)`,
       [typeIds],
     );
-    return rawTypes.map((st: any) => ({
+    return rawTypes.map((st: RawServiceTypeRow) => ({
       id: String(st.id),
       code: st.code,
       name: st.name,
@@ -37,6 +44,13 @@ export class AppointmentDetailRepository {
 
   public async saveDetails(details: AppointmentDetail[]): Promise<AppointmentDetail[]> {
     return this.repo.save(details);
+  }
+
+  public async deleteByAppointmentIdTransactional(
+    manager: EntityManager,
+    appointmentId: string,
+  ): Promise<void> {
+    await manager.delete(AppointmentDetail, { appointmentId });
   }
 
   public async saveDetailsTransactional(
