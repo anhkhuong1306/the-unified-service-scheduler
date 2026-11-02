@@ -8,6 +8,7 @@ export * from './i18n';
 export * from './decorators/log-span.decorator';
 export * from './decorators/public.decorator';
 export * from './decorators/trim.decorator';
+export * from './decorators/api-doc-response.decorator';
 export * from './enums/error-code.enum';
 export * from './exceptions/domain.exception';
 export * from './filters/global-exception.filter';

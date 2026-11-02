@@ -1,6 +1,8 @@
 import { Controller, Get, Inject, Query, UnauthorizedException } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  ApiDocErrors,
+  ApiDocPaginated,
   ApiResponse,
   ApiResponseEnvelope,
   CursorPaginationHelper,
@@ -13,12 +15,14 @@ import {
   VehicleSnapshotDto,
 } from '@app/contracts';
 import { VehicleQueryDto } from '@app/crm';
+import { SAMPLE_VEHICLE } from './samples/crm-swagger.samples';
 
 /**
  * Controller exposing endpoints for the currently authenticated customer's vehicles.
  * Pure HTTP Adapter delegating directly to the CRM directory service with offset-based pagination and optional filters.
  */
 @ApiTags('Customer')
+@ApiBearerAuth()
 @Controller({ path: 'v1/me/vehicles' })
 export class CustomerVehiclesController {
   public constructor(
@@ -28,6 +32,12 @@ export class CustomerVehiclesController {
 
   @Get()
   @ApiOperation({ summary: 'List all vehicles registered to the currently authenticated customer with offset pagination and filters' })
+  @ApiDocPaginated({
+    description: 'Customer vehicles returned successfully with offset pagination',
+    exampleItem: SAMPLE_VEHICLE,
+    total: 1,
+  })
+  @ApiDocErrors([400, 401, 500])
   public async listMyVehicles(
     @Query() queryDto: VehicleQueryDto,
   ): Promise<ApiResponseEnvelope<VehicleSnapshotDto[]>> {
@@ -35,11 +45,9 @@ export class CustomerVehiclesController {
     if (!actorSub) {
       throw new UnauthorizedException('Missing authentication token or credentials');
     }
-    const tenantId = queryDto.tenant_id ?? String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
+    const tenantId = queryDto.tenantId ?? String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
 
-    // If client provided a cursor (e.g. TC_VEH_002 / TC_VEH_003 testing cursor behavior)
     if (queryDto.cursor) {
-      // Validate cursor payload structure. Will throw BadRequestException (HTTP 400) on malformed token.
       CursorPaginationHelper.decode(queryDto.cursor);
       const result = await this.crmDirectory.listVehiclesByActorSubPaginated(actorSub, tenantId, {
         cursor: queryDto.cursor,
@@ -48,7 +56,6 @@ export class CustomerVehiclesController {
       return ApiResponse.cursorPaginated(result.items, result.meta);
     }
 
-    // Default standard: Offset pagination with flexible filters
     const result = await this.crmDirectory.listVehiclesOffsetPaginated(queryDto, { actorSub, tenantId });
     return ApiResponse.offsetPaginated(result);
   }

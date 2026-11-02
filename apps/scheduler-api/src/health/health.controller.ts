@@ -1,6 +1,8 @@
 import { Controller, Get, Logger } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  ApiDocErrors,
+  ApiDocSuccess,
   ApiResponse,
   ApiResponseEnvelope,
   DomainException,
@@ -32,6 +34,14 @@ export class HealthController {
 
   @Get('live')
   @ApiOperation({ summary: 'Liveness probe verifying the API process is up' })
+  @ApiDocSuccess({
+    status: 200,
+    description: 'Service process is healthy and responsive',
+    example: {
+      status: 'ok',
+      service: 'scheduler-api',
+    },
+  })
   public getLive(): ApiResponseEnvelope<LivenessPayload> {
     this.logger.debug('Executing liveness check (HealthController.getLive)');
 
@@ -49,6 +59,18 @@ export class HealthController {
     summary:
       'Readiness probe verifying PostgreSQL reachability and OIDC/JWKS configuration',
   })
+  @ApiDocSuccess({
+    status: 200,
+    description: 'PostgreSQL database and SSO subsystem ready',
+    example: {
+      status: 'ready',
+      checks: {
+        database: 'up',
+        sso: 'mock_enabled',
+      },
+    },
+  })
+  @ApiDocErrors([503])
   public getReady(): ApiResponseEnvelope<ReadinessPayload> {
     this.logger.debug('Executing readiness check (HealthController.getReady)');
 
