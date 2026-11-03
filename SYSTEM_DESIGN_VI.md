@@ -1,28 +1,29 @@
 # Tài liệu Thiết kế Hệ thống — Unified Service Scheduler (Scenario A) — Bản Tiếng Việt (v5 — NestJS Monorepo)
 
-> 📌 Bản diễn giải Tiếng Việt của `SYSTEM_DESIGN.md` (v5 — Kiến trúc **NestJS Monorepo `apps/` + `libs/`**, TypeScript 5+, Node.js 22+ LTS, TypeORM, PostgreSQL 18, Pino). Đã hiệu chỉnh toàn diện theo review concurrency mới nhất. Số mục tương ứng 1–1 với bản Tiếng Anh để user tiện đối chiếu khi quay video và phỏng vấn.
+> 📌 Bản diễn giải Tiếng Việt của `SYSTEM_DESIGN.md` (v5 — Kiến trúc **NestJS Monorepo `apps/` + `libs/`**, TypeScript 5+, Node.js 22+ LTS, TypeORM, PostgreSQL 18, Structured JSON Logging). Đã hiệu chỉnh toàn diện theo review concurrency mới nhất. Số mục tương ứng 1–1 với bản Tiếng Anh để user tiện đối chiếu khi quay video và phỏng vấn.
 
 ---
 
 ## Mục Lục (Chỉ Mục Tài Liệu)
 
-- [1. Bài toán & Phạm vi](#1-bài-toán-phạm-vi)
+- [1. Bài toán & Phạm vi](#1-bài-toán--phạm-vi)
   - [1.1 Actors](#11-actors)
   - [1.2 Mức ưu tiên](#12-mức-ưu-tiên)
-- [2. Giả định (Assumptions) & Invariants Kiến trúc](#2-giả-định-assumptions-invariants-kiến-trúc)
-  - [2.1 Phạm vi & Actors](#21-phạm-vi-actors)
+- [2. Giả định (Assumptions) & Invariants Kiến trúc](#2-giả-định-assumptions--invariants-kiến-trúc)
+  - [2.1 Phạm vi & Actors](#21-phạm-vi--actors)
   - [2.2 Tài nguyên](#22-tài-nguyên)
-  - [2.3 Quy tắc đặt lịch & Chuẩn hóa Lưới Slot (Cấu hình tại `workshop_settings` của từng dealership)](#23-quy-tắc-đặt-lịch-chuẩn-hóa-lưới-slot-cấu-hình-tại-workshopsettings-của-từng-dealership)
-  - [2.4 Quy tắc vòng đời, chỉnh sửa & 3 Invariants Cốt lõi](#24-quy-tắc-vòng-đời-chỉnh-sửa-3-invariants-cốt-lõi)
-- [3. Phân rã Module theo DMS trên nền NestJS Monorepo (`apps/` + `libs/`)](#3-phân-rã-module-theo-dms-trên-nền-nestjs-monorepo-apps-libs)
+  - [2.3 Quy tắc đặt lịch & Chuẩn hóa Lưới Slot (Cấu hình tại `workshop_settings` của từng dealership)](#23-quy-tắc-đặt-lịch--chuẩn-hóa-lưới-slot-cấu-hình-tại-workshop_settings-của-từng-dealership)
+  - [2.4 Quy tắc vòng đời, chỉnh sửa & 3 Invariants Cốt lõi](#24-quy-tắc-vòng-đời-chỉnh-sửa--3-invariants-cốt-lõi)
+- [3. Phân rã Module theo DMS trên nền NestJS Monorepo (`apps/` + `libs/`)](#3-phân-rã-module-theo-dms-trên-nền-nestjs-monorepo-apps--libs)
   - [3.1 Kỷ luật ranh giới được ép bằng công cụ](#31-kỷ-luật-ranh-giới-được-ép-bằng-công-cụ)
-- [4. Kiến trúc & Lộ trình Tiến hóa Microservices (Phased Strangler Extraction)](#4-kiến-trúc-lộ-trình-tiến-hóa-microservices-phased-strangler-extraction)
-- [5. Data Model & Ràng buộc Toàn vẹn (PostgreSQL 18 + TypeORM)](#5-data-model-ràng-buộc-toàn-vẹn-postgresql-18-typeorm)
-- [6, 7 & 8. Luồng Dữ liệu, Concurrency & Xử lý Vòng đời Nghiệp vụ](#6-7-8-luồng-dữ-liệu-concurrency-xử-lý-vòng-đời-nghiệp-vụ)
-  - [8.1 Ứng Phó Tải Đột Biến 10.000 Requests Cùng Lúc (10k RPS) & Mô Hình Lọc 3 Tầng (Defense-in-Depth)](#81-ứng-phó-tải-đột-biến-10000-requests-cùng-lúc-10k-rps-mô-hình-lọc-3-tầng-defense-in-depth)
-- [9. Quy Chuẩn Kỹ Thuật & Kiến Trúc Cốt Lõi (Universal Engineering Standards)](#9-quy-chuẩn-kỹ-thuật-kiến-trúc-cốt-lõi-universal-engineering-standards)
-- [9, 10 & 11. API Envelope, Mock OIDC (`jose`) & Observability (`Pino` + `AsyncLocalStorage` + `@LogSpan()`)](#9-10-11-api-envelope-mock-oidc-jose-observability-pino-asynclocalstorage-logspan)
-- [12, 13, 14 & 15. Multi-tenancy, Kiểm thử (`Jest` + `Supertest`), Công nghệ & GenAI Collaboration](#12-13-14-15-multi-tenancy-kiểm-thử-jest-supertest-công-nghệ-genai-collaboration)
+- [4. Kiến trúc & Lộ trình Tiến hóa Microservices (Phased Strangler Extraction)](#4-kiến-trúc--lộ-trình-tiến-hóa-microservices-phased-strangler-extraction)
+- [5. Data Model & Ràng buộc Toàn vẹn (PostgreSQL 18 + TypeORM)](#5-data-model--ràng-buộc-toàn-vẹn-postgresql-18--typeorm)
+  - [5.1 Ghi chú & Chú thích Chi tiết các Cột Bảng Nghiệp vụ Cốt Lõi](#51-ghi-chú--chú-thích-chi-tiết-các-cột-bảng-nghiệp-vụ-cốt-lõi)
+- [6, 7 & 8. Luồng Dữ liệu, Concurrency & Xử lý Vòng đời Nghiệp vụ](#6-7--8-luồng-dữ-liệu-concurrency--xử-lý-vòng-đời-nghiệp-vụ)
+  - [8.1 Ứng Phó Tải Đột Biến 10.000 Requests Cùng Lúc (10k RPS) & Mô Hình Lọc 3 Tầng (Defense-in-Depth)](#81-ứng-phó-tải-đột-biến-10000-requests-cùng-lúc-10k-rps--mô-hình-lọc-3-tầng-defense-in-depth)
+- [9. Quy Chuẩn Kỹ Thuật & Kiến Trúc Cốt Lõi (Universal Engineering Standards)](#9-quy-chuẩn-kỹ-thuật--kiến-trúc-cốt-lõi-universal-engineering-standards)
+- [10 & 11. Security Qua SSO Mockup & Observability (`AsyncLocalStorage` + `@LogSpan()`)](#10--11-security-qua-sso-mockup--observability-asynclocalstorage--logspan)
+- [12, 13, 14 & 15. Multi-tenancy, Kiểm thử (`Jest` + `Supertest`), Công nghệ & GenAI Collaboration](#12-13-14--15-multi-tenancy-kiểm-thử-jest--supertest-công-nghệ--genai-collaboration)
 
 ---
 
@@ -40,7 +41,7 @@
 | **System** | — | Worker job (`apps/scheduler-worker`) tự chuyển các lịch `PENDING` chưa duyệt khi tới mốc `start_at − cancellation_cutoff` sang `EXPIRED` | — |
 
 ### 1.2 Mức ưu tiên
-- **P0 (Core requirements):** truy vấn availability (1 câu SQL), đặt lịch tuần tự hóa theo dealership với cấp phát bay + technician đủ chuyên môn, bản ghi lịch hẹn `CONFIRMED` (chế độ auto-confirm), xác thực token, kiểm thử concurrency bằng `Promise.all` (Supertest).
+- **P0 (Core requirements):** Xây dựng luồng đặt lịch: từ xác thực token, truy vấn lịch trống, đến phân bổ tuần tự khoang sửa chữa và thợ chuyên môn để tạo lịch tự động xác nhận. Đảm bảo độ ổn định của hệ thống qua các bài test đặt lịch đồng thời (concurrent HTTP tests).
 - **P1 (Build for the future):** luồng duyệt (`requires_approval`), phân quyền staff theo dealership, đổi technician/bay (`reassign`), **dời lịch khách tới sớm (`reschedule`)**, **hoán đổi slot (`swap`)**, state machine, worker job expire `PENDING`, **bảo vệ giới hạn active appointment bằng Customer Advisory Lock (chống race xuyên dealership — Case 6)**, **idempotency hoàn tất atomic trong transaction kèm lease 60s (chống crash kẹt — Case 11)**, **Real-Time SSE đồng bộ qua PostgreSQL `LISTEN / NOTIFY` và event `version` (Case 12)**, optimistic locking, response envelope, structured log với Pino + `AsyncLocalStorage` + `@LogSpan()` decorator, mock OIDC tối giản (`jose`), `@nestjs/swagger` OpenAPI, `eslint-plugin-boundaries`.
 - **P2 (Chỉ thiết kế):** tự xếp lại lịch khi overrun lớn, auto no-show, transactional outbox + event bus (Kafka / RabbitMQ), Row-Level Security, waitlist, API quản lý ca nghỉ / đóng bay, SSO thật, tách microservices vật lý.
 
@@ -49,12 +50,17 @@
 ## 2. Giả định (Assumptions) & Invariants Kiến trúc
 
 ### 2.1 Phạm vi & Actors
-- **S1–S5:** Chỉ khách đã có account + xe (seed); khách tự chọn dealership; mọi dealership xử lý mọi loại xe; staff thuộc đúng 1 dealership; hiện single-tenant nhưng mọi bảng nghiệp vụ có `tenant_id`.
+- **S1 (Trọng tâm Đặt lịch & Dữ liệu Mẫu Seeded):** Hệ thống tập trung tối đa vào **vòng đời Đặt lịch hẹn dịch vụ** (Tính toán khung giờ trống Availability, Đặt lịch hẹn Booking, Khách hủy lịch, và Các thao tác vận hành của nhân viên). Mọi thực thể phụ trợ ngoài phạm vi đặt lịch này (Đại lý, Cấu hình xưởng, Khoang sửa chữa, Kỹ thuật viên, Kỹ năng, Khách hàng, Xe đã đăng ký) là **Master Data chỉ xem (View-only)** được khởi tạo sẵn qua script seed cơ sở dữ liệu (`docker/postgres/03-seed.sql`), không triển khai CRUD quản trị trong MVP.
+- **S2 (Chức năng Đặt lịch Dành Riêng cho Customer — Tuyệt đối Không Đặt Hộ):** Chức năng đặt lịch (`POST /v1/appointments`) được thiết kế dành riêng cho khách hàng (Customer) đã đăng nhập tự đặt lịch cho xe thuộc quyền sở hữu của chính mình. **Tuyệt đối cấm đặt hộ khách hàng khác (No Proxy Booking)**, được bảo vệ bằng cơ chế kiểm tra định danh Zero-Trust (`identity_subject` / `customer_id`). Nhân viên (Staff) không tạo lịch thay khách mà chỉ thao tác các nghiệp vụ vận hành sau khi lịch đã phát sinh (duyệt, check-in, bắt đầu, hoàn thành, dời lịch, đổi thợ, hoán đổi slot).
+- **S3–S6:** Khách tự chọn dealership; mọi dealership xử lý mọi loại xe; staff thuộc đúng 1 dealership; hiện single-tenant nhưng mọi bảng nghiệp vụ có `tenant_id`.
 
 ### 2.2 Tài nguyên
-- **R1–R4:** Mỗi dealership cố định **10 service bays + 10 technicians**; 1 xe ↔ 1 technician ↔ 1 bay; không làm song song 2 xe; mỗi `ServiceType` yêu cầu 1 `Skill`, technician có thể có nhiều skill.
+- **R1:** Mỗi dealership cố định **10 service bays + 10 technicians** (dữ liệu mẫu seeded, không CRUD).
+- **R2 (1 Bay, 1 Technician, Nhiều Dịch Vụ):** 1 lịch hẹn chỉ được cấp phát cho đúng **1 Service Bay** và **1 Technician**, nhưng hỗ trợ đặt **nhiều dịch vụ cùng lúc** (`service_type_ids: bigint[]`, chi tiết lưu tại bảng `appointment_details`).
+- **R3:** Một kỹ thuật viên chỉ làm 1 xe tại 1 thời điểm; một khoang sửa chữa chỉ chứa 1 xe tại 1 thời điểm.
+- **R4 (Thực Thi Dịch Vụ Liên Tục & Kỹ Năng Đầy Đủ):** Toàn bộ các dịch vụ trong 1 lịch hẹn được thực thi **liên tục theo thời gian, không ngắt quãng** ra từng khung giờ khác nhau (`start_at` đến `end_at = start_at + sum(duration_minutes)`). Kỹ thuật viên duy nhất được phân bổ bắt buộc phải có **đầy đủ tất cả các kỹ năng yêu cầu** của từng dịch vụ nằm trong lịch hẹn đó.
 - **R5 (Best-fit Technician Selection):** Khi khách không chỉ định technician, hệ thống chọn technician đủ skill đang trống theo thứ tự **ít skill nhất trước**, sau đó đến **ít lịch trong ngày nhất**. Bay chọn theo ít lịch trong ngày nhất.
-- **R6 (Ca nghỉ / Đóng khoang):** Tạo sẵn bảng `technician_unavailabilities` và `bay_closures` (mặc định rỗng) và đưa sẵn điều kiện loại trừ vào câu SQL availability / allocation.
+- **R6 (Ca nghỉ / Đóng khoang):** Bảng `technician_unavailabilities` và `bay_closures` thuộc lộ trình Phase 2 (P2), tạm thời lược bỏ khỏi schema MVP để tối ưu hiệu năng.
 
 ### 2.3 Quy tắc đặt lịch & Chuẩn hóa Lưới Slot (Cấu hình tại `workshop_settings` của từng dealership)
 - **B1 (Thời lượng dịch vụ mặc định bắt buộc):** Mỗi `ServiceType` định nghĩa sẵn `duration_minutes` (Flat-Rate Standard Labor Time) áp dụng ngay khi khách chọn (`end_at = start_at + duration_minutes`).
@@ -116,40 +122,74 @@ Nhờ cấu trúc `apps/` + `libs/` của NestJS Monorepo, việc tách microser
 ## 5. Data Model & Ràng buộc Toàn vẹn (PostgreSQL 18 + TypeORM)
 
 - **Cột `code` bắt buộc cho mọi Master Entity:** Toàn bộ bảng chính (`dealerships`, `customers`, `skills`, `service_types`, `service_bays`, `technicians`, `appointment_details`) đều có cột `code VARCHAR(50) NOT NULL` (kèm unique index theo tenant hoặc dealership) để định danh nghiệp vụ bên cạnh khóa kỹ thuật `id`.
-- **Bảng `appointment_details` (Chi tiết dịch vụ đa gói — Multi-Service Support):**
-  - Hỗ trợ lưu trữ minh bạch từng hạng mục dịch vụ mà khách hàng đặt trong 1 lịch hẹn (`appointment_id`, `service_type_id`, `code`, `name`, `duration_minutes`, `price`, `sequence_order`).
-  - Đi kèm với cột mảng `service_type_ids BIGINT[]` tại bảng `appointments` giúp truy vấn nhanh mà không cần JOIN.
-- **Audit Columns lưu vết Mã/Tên người thao tác:** Các trường audit (`created_by`, `updated_by`, `cancelled_by`) lưu chuỗi `code` hoặc `name` của actor (VD: `CUST-001`, `STAFF-001`, `system_cron`), tuyệt đối không lưu raw UUID khó nhận diện. Tự động gán thông qua `AuditColumnsSubscriber` và `BaseAuditEntity`.
-- **Bảng `workshop_settings`:** Sao chép sẵn `timezone` từ dealership để `@app/workshop` độc lập tuyệt đối khi tính slot.
-- **Bảng `idempotency_keys`:** Có cột `locked_until` (lease 60s cho trạng thái `IN_PROGRESS`). Chuyển sang `COMPLETED` cùng transaction với `appointments`.
-- **Bảng `appointments`:** Có snapshots `customer_name`, `vehicle_plate`, `vehicle_label` và đầy đủ audit columns `created_at`, `updated_at`, `created_by`, `updated_by`, `cancelled_at`, `cancelled_by`. Cột `version` phục vụ Optimistic Locking.
 - **Ràng buộc loại trừ GiST (`btree_gist`):** Duy trì 3 exclusion constraints chống trùng lặp tại mức lưu trữ: `no_bay_overlap`, `no_technician_overlap`, `no_vehicle_overlap` trên dải thời gian `period = [start_at, occupied_until)`.
-- **Ghi chú về Ca nghỉ / Đóng khoang:** Các bảng `technician_unavailabilities` và `bay_closures` thuộc lộ trình Phase 2 (P2), được lược bỏ khỏi schema MVP để tối ưu hiệu năng vận hành thực tế.
+- **Tham chiếu Schema DDL chi tiết:**
+  - Script tạo bảng, khóa ngoại, chỉ mục chi tiết: [`docker/postgres/02-schema.sql`](file:///home/anhkhuong1306/test/source/docker/postgres/02-schema.sql)
+  - Script dữ liệu mẫu (Seeded data): [`docker/postgres/03-seed.sql`](file:///home/anhkhuong1306/test/source/docker/postgres/03-seed.sql)
+
+### 5.1 Ghi chú & Chú thích Chi tiết các Cột Bảng Nghiệp vụ Cốt Lõi
+
+#### 1. Bảng `workshop_settings` (Cấu hình Tham số Xưởng của Đại lý)
+- `dealership_id` (PK, FK): Khóa chính và khóa ngoại liên kết 1-1 với bảng đại lý `dealerships`.
+- `timezone`: Chuỗi múi giờ IANA (VD: `'Asia/Ho_Chi_Minh'`) sao chép sẵn từ đại lý để tính toán lịch hẹn độc lập.
+- `opens_at` / `closes_at`: Giờ mở cửa (`08:00`) và đóng cửa (`18:00`) của xưởng. Điều kiện kiểm tra: `end_at <= closes_at`.
+- `slot_minutes`: Bước nhảy phân cách lưới slot (mặc định `30 phút`).
+- `buffer_minutes`: Thời gian chuẩn bị/vệ sinh khoang sau mỗi ca (mặc định `15 phút`). `occupied_until = end_at + buffer_minutes`.
+- `grace_minutes`: Thời gian ân hạn cho phép khách tới muộn trước khi nhân viên được đánh dấu `NO_SHOW` (`15 phút`).
+- `lead_time_minutes`: Thời gian bắt buộc phải đặt trước tối thiểu (`60 phút`). Chặn các yêu cầu cận giờ.
+- `horizon_days`: Giới hạn tối đa được đặt trước trong tương lai (`30 ngày`).
+- `cancellation_cutoff_minutes`: Khung thời gian sát giờ hẹn (`120 phút`) cấm khách hàng tự hủy lịch.
+- `requires_approval`: Cờ phê duyệt: `FALSE` = tự động xác nhận (`CONFIRMED`); `TRUE` = chờ quản lý duyệt (`PENDING`).
+- `max_active_per_customer`: Số lượng lịch hẹn active tối đa đồng thời của 1 khách hàng trên toàn bộ hệ thống (`3`).
+- `created_at`, `created_by`, `updated_at`, `updated_by`: Dấu vết kiểm toán (audit trail) lưu mã/tên người thao tác.
+
+#### 2. Bảng `appointments` (Thực thể Lịch hẹn Chính)
+- `id` (UUID PK): Khóa chính duy nhất toàn cục.
+- `code` (VARCHAR UK): Mã số lịch hẹn định danh nghiệp vụ hiển thị cho khách và đại lý (VD: `APT-20261102-0001`).
+- `dealership_id` / `customer_id` / `vehicle_id`: Khóa ngoại trỏ đến đại lý, khách hàng sở hữu và phương tiện bảo dưỡng.
+- `service_type_ids` (`BIGINT[]`): Mảng chứa ID các dịch vụ được chọn, hỗ trợ đặt nhiều gói dịch vụ trong 1 lịch hẹn.
+- `service_bay_id` / `technician_id`: Khoang sửa chữa và kỹ thuật viên được cấp phát, đảm bảo thợ có đủ skill cho toàn bộ gói dịch vụ.
+- `customer_name`, `vehicle_plate`, `vehicle_label`: Bản chụp (snapshot) thông tin khách và xe tại thời điểm đặt, bảo toàn lịch sử.
+- `start_at` / `end_at`: Thời gian bắt đầu và kết thúc làm việc (`end_at = start_at + sum(duration_minutes)`).
+- `occupied_until`: Mốc thời gian giải phóng tài nguyên (`end_at + buffer_minutes`).
+- `period` (`TSTZRANGE`): Cột khoảng thời gian tự động sinh `[start_at, occupied_until)` được đánh chỉ mục GiST chống trùng.
+- `status`: Trạng thái vòng đời (`PENDING`, `CONFIRMED`, `CHECKED_IN`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, `REJECTED`, `EXPIRED`, `NO_SHOW`).
+- `version`: Số nguyên đơn điệu tăng dần (+1 mỗi lần update) phục vụ khóa lạc quan Optimistic Locking và chống trễ gói tin SSE.
+- `notes`: Ghi chú yêu cầu của khách hàng.
+- `cancel_reason`, `cancelled_at`, `cancelled_by`: Dấu vết khi hủy lịch.
+
+#### 3. Bảng `appointment_details` (Chi tiết Từng Gói Dịch Vụ Con)
+- `id` (PK), `appointment_id` (FK CASCADE): Định danh và khóa ngoại liên kết với lịch hẹn cha.
+- `service_type_id` (FK), `code`, `name`: Tham chiếu danh mục dịch vụ kèm snapshot mã và tên gói dịch vụ.
+- `duration_minutes`: Thời lượng chuẩn phân bổ cho gói dịch vụ này.
+- `price`: Bản chụp đơn giá tại thời điểm đặt lịch, bảo vệ tính toàn vẹn tài chính trước các đợt đổi giá danh mục.
+- `sequence_order`: Thứ tự thực hiện tuần tự của gói dịch vụ trong ca làm việc liên tục.
 
 ---
 
 ## 6, 7 & 8. Luồng Dữ liệu, Concurrency & Xử lý Vòng đời Nghiệp vụ
 
-1. **Khóa 2 Cấp Ngăn Chặn Vượt Hạn Mức Active Xuyên Dealership (Fix Case 6):**
+1. **Endpoint Tính Slot Trống Của Lịch Hẹn:** Sử dụng endpoint chuẩn `GET /v1/appointments/availability?dealership_id={id}&date={date}&service_type_ids={ids}` để tính toán ma trận slot trên lưới 30 phút kèm buffer 15 phút.
+2. **Khóa 2 Cấp Ngăn Chặn Vượt Hạn Mức Active Xuyên Dealership (Fix Case 6):**
    - Đặt lịch tại `CreateAppointmentUseCase`: Xin `pg_advisory_xact_lock(NS_CUSTOMER::int4, customerId::int4)` TRƯỚC, rồi mới xin `pg_advisory_xact_lock(NS_BOOKING::int4, dealershipId::int4)`. Đếm số lịch active trên toàn hệ thống dưới khóa customer này đảm bảo không bao giờ bị vượt `max_active_per_customer = 3`.
-2. **Ép Kiểu Tham Số Advisory Lock (`::int4`):**
+3. **Ép Kiểu Tham Số Advisory Lock (`::int4`):**
    - Hàm 2 tham số `pg_advisory_xact_lock(int4, int4)` nhận số 32-bit. Toàn bộ code đều ép kiểu tường minh `::int4`.
-3. **Idempotency An Toàn Tuyệt Đối Trước Crash (Fix Case 11):**
+4. **Idempotency An Toàn Tuyệt Đối Trước Crash (Fix Case 11):**
    - Insert `IN_PROGRESS` kèm lease ngắn 60s (`locked_until = now() + 60s`).
    - Cập nhật kết quả `COMPLETED` **ngay bên trong database transaction** tạo lịch hẹn.
-4. **Real-Time SSE Đồng Bộ Xuyên Process/Pod Bằng PostgreSQL `LISTEN / NOTIFY` (Fix Case 12):**
+5. **Real-Time SSE Đồng Bộ Xuyên Process/Pod Bằng PostgreSQL `LISTEN / NOTIFY` (Fix Case 12):**
    - Bên trong transaction, gọi `SELECT pg_notify('appointment_events', payload)`.
    - `NOTIFY` chỉ được PostgreSQL giao **ngay khi `COMMIT` thành công**, tự động hủy nếu `ROLLBACK`.
    - `apps/scheduler-worker` (cron expire) và các pod `apps/scheduler-api` đều dùng chung kênh này, giúp event đến tất cả SSE client mà không cần cài thêm message broker.
    - Event mang theo `version` để client bỏ qua các gói tin cũ nếu đến lệch thứ tự (`payload.version <= local.version`).
-5. **State Machine & Trạng Thái Tạm Thời `SWAPPING`:**
+6. **State Machine & Trạng Thái Tạm Thời `SWAPPING`:**
    - Quản lý tập trung qua `AppointmentStateMachine`. Cho phép các luồng: `approve`, `reject`, `check_in`, `start` (`IN_PROGRESS`), `complete`, `no_show`, `expire`, `cancel`.
    - Đối với thao tác Hoán đổi Lịch hẹn (`SwapAppointmentsUseCase`), trạng thái tạm `SWAPPING` được gán trong transaction để tạm thời đưa bản ghi ra khỏi partial GiST index, giúp 2 lịch hoán đổi cho nhau mà không bị xung đột khóa ngoại hay lỗi SQLSTATE 23P01.
-6. **Bổ Sung Endpoint Dời Lịch Cho Khách Tới Sớm (`reschedule`):**
+7. **Bổ Sung Endpoint Dời Lịch Cho Khách Tới Sớm (`reschedule`):**
    - Bổ sung `POST /v1/staff/appointments/{id}/reschedule` cho staff dời `start_at` của khách tới sớm (Kịch bản A & B), override `lead_time`, kiểm tra cả Bay và Technician trống.
-7. **Phân bổ Điều phối lại (`reassign`):**
+8. **Phân bổ Điều phối lại (`reassign`):**
    - Staff đổi khoang hoặc kỹ thuật viên phụ trách, kiểm tra chặt chẽ thợ mới sở hữu toàn bộ kỹ năng yêu cầu bởi các gói dịch vụ trong lịch hẹn.
-8. **Đánh Giá Lý Do `409` Rõ Ràng (Case 2):**
+9. **Đánh Giá Lý Do `409` Rõ Ràng (Case 2):**
    - Kiểm tra `NO_FREE_BAY` trước, sau đó đến `NO_QUALIFIED_TECHNICIAN`, và trả về số lượng chi tiết (`free_bays`, `free_technicians`) cùng danh sách thời điểm thay thế trong payload.
 
 ### 8.1 Ứng Phó Tải Đột Biến 10.000 Requests Cùng Lúc (10k RPS) & Mô Hình Lọc 3 Tầng (Defense-in-Depth)
@@ -191,16 +231,16 @@ Ràng buộc toàn vẹn của PostgreSQL (`EXCLUDE USING gist`) và Advisory Lo
 
 ---
 
-## 9, 10 & 11. API Envelope, Mock OIDC (`jose`) & Observability (`Pino` + `AsyncLocalStorage` + `@LogSpan()`)
+## 10 & 11. Security Qua SSO Mockup & Observability (`AsyncLocalStorage` + `@LogSpan()`)
 
-- **Response Envelope thống nhất:** `ResponseEnvelopeInterceptor` và `GlobalExceptionFilter` chuẩn hóa mọi kết quả trả về theo `{ statusCode, errorCode, data, message, meta }`.
-- **Mock OIDC (`@app/sso-mock` + thư viện `jose`):**
-  - Lệnh `npm run sso:keys` sinh cặp khóa RSA; `npm run sso:issue-token -- <email>` in sẵn token để bypass login.
-  - `OidcJwtAuthGuard` verify chữ ký RS256 qua JWKS cache (kiểm tra chặt `exp` với dung sai 0s, `iss`, `aud`).
+- **Security via SSO Mockup (Đang phát triển module IdP chính thức):**
+  - Tích hợp IdP sản xuất hoàn chỉnh đang trong quá trình thực hiện (WIP). Hiện tại hệ thống xác thực và cấp quyền thông qua module **SSO Mockup** (`/v1/auth/token`) sinh token RS256 JWT mang đầy đủ claims (`sub`, `roles`, `tenant_id`, `dealership_id`).
+  - Phân quyền Zero-Trust IDOR: Khách hàng chỉ truy cập lịch hẹn của chính mình (`customer_id` matching), nhân viên giới hạn phạm vi trong `dealership_id` của mình.
 - **Observability chuẩn Node.js hiện đại:**
-  - Dùng **`AsyncLocalStorage` (`node:async_hooks`)** lưu `correlationId` và thông tin user xuyên suốt chuỗi `async/await` của request, tự động gắn `correlation_id` vào **mọi dòng log của Pino**.
-  - `LoggingInterceptor` ghi 2 dòng `REQUEST_START` và `REQUEST_END` kèm **đầy đủ `response` cho cả thành công và lỗi** (đã qua bộ lọc che PII/secrets).
+  - Dùng **`AsyncLocalStorage` (`node:async_hooks`)** lưu `correlationId` và thông tin user xuyên suốt chuỗi `async/await` của request, tự động gắn `correlation_id` vào mọi dòng log.
+  - `LoggingInterceptor` ghi nhận log bắt đầu và kết thúc request kèm **đầy đủ response body cho cả thành công và lỗi** (đã qua bộ lọc che PII/secrets).
   - **Decorator `@LogSpan()`:** Gắn trực tiếp lên các hàm UseCase/Service để tự động log `class, function, input, output` cực kỳ gọn và sạch.
+- **Chỉ số Metrics (Kế hoạch Roadmap):** Việc kết nối các bộ thu thập Prometheus và OpenTelemetry là **kế hoạch dự kiến triển khai** trong giai đoạn hạ tầng tiếp theo, hiện tại đã chuẩn bị sẵn danh mục đặc tả RED metrics và DB metrics.
 
 ---
 
@@ -211,4 +251,5 @@ Ràng buộc toàn vẹn của PostgreSQL (`EXCLUDE USING gist`) và Advisory Lo
   2. Các request đặt khác slot cùng lúc $\to$ đều thành công (không có false `409`).
   3. **Kiểm thử Case 6 (Chống vượt hạn mức active):** 1 khách hàng có sẵn 2 lịch active, bắn đồng thời đặt lịch ở Dealership A và Dealership B $\to$ đúng 1 request thành công, request còn lại nhận `409 ACTIVE_APPOINTMENT_LIMIT_REACHED` nhờ khóa `NS_CUSTOMER`.
 - **Kiểm soát kiến trúc tự động:** Dùng `eslint-plugin-boundaries` trong `npm run lint` để chặn mọi import trái phép giữa các thư viện trong `libs/`.
-- **Mục 15 (GenAI Collaboration):** Ghi nhận đầy đủ 17 vòng phản biện và hoàn thiện thiết kế (bao gồm đợt rà soát concurrency chuyên sâu 11 điểm kỹ thuật).
+- **Mục 15 (GenAI Collaboration):** Toàn bộ nhật ký 17 vòng đối thoại kiến trúc và phản biện đa agent đã được tách thành tài liệu riêng biệt tại:
+  👉 [`docs/GENAI_DESIGN_COLLABORATION.md`](file:///home/anhkhuong1306/test/source/docs/GENAI_DESIGN_COLLABORATION.md).

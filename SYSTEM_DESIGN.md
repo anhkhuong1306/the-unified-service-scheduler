@@ -4,49 +4,51 @@
 | :--- | :--- |
 | Domain | Ownership — Service / Workshop |
 | Implemented layer | **Backend** (RESTful API + Real-Time SSE Streams + persistent PostgreSQL). Client layer is stubbed via OpenAPI/Swagger UI (`/docs/api`), two lightweight live SSE demo screens (`/demo` for Customer & Dealership/Technician), cURL and pre-issued tokens. |
-| Stack | TypeScript 5+, Node.js 22+ LTS, **NestJS Monorepo (`apps/` + `libs/`)**, TypeORM, PostgreSQL 18, Pino, Docker Compose |
-| Document status | v5 — Post-Concurrency Review (NestJS Monorepo architecture) |
+| Stack | TypeScript 5+, Node.js 22+ LTS, **NestJS Monorepo (`apps/` + `libs/`)**, TypeORM, PostgreSQL 18, Structured JSON Logging, Docker Compose |
+| Document status | v5 — Post-Concurrency Review  |
 
 ---
 
 ## Table of Contents
 
-- [1. Problem Statement & Scope](#1-problem-statement-scope)
+- [1. Problem Statement & Scope](#1-problem-statement--scope)
   - [1.1 Actors](#11-actors)
   - [1.2 Delivery priorities](#12-delivery-priorities)
 - [2. Assumptions](#2-assumptions)
-  - [2.1 Scope & actors](#21-scope-actors)
+  - [2.1 Scope & actors](#21-scope--actors)
   - [2.2 Resources](#22-resources)
-  - [2.3 Booking rules & Slot-Grid Alignment (per-dealership `workshop_settings`)](#23-booking-rules-slot-grid-alignment-per-dealership-workshopsettings)
+  - [2.3 Booking rules & Slot-Grid Alignment (per-dealership `workshop_settings`)](#23-booking-rules--slot-grid-alignment-per-dealership-workshop_settings)
   - [2.4 Lifecycle rules](#24-lifecycle-rules)
-- [3. Domain Decomposition — DMS-aligned NestJS Monorepo (`apps/` + `libs/`)](#3-domain-decomposition-dms-aligned-nestjs-monorepo-apps-libs)
-  - [3.1 Module boundaries — enforced in CI](#31-module-boundaries-enforced-in-ci)
+- [3. Domain Decomposition — DMS-aligned NestJS Monorepo (`apps/` + `libs/`)](#3-domain-decomposition--dms-aligned-nestjs-monorepo-apps--libs)
+  - [3.1 Module boundaries — enforced in CI](#31-module-boundaries--enforced-in-ci)
 - [4. Architecture](#4-architecture)
-  - [4.1 Current implementation — NestJS Monorepo (`apps/` + `libs/`)](#41-current-implementation-nestjs-monorepo-apps-libs)
-  - [4.2 Evolution path — Phased Strangler Extraction (Logical Boundaries ≠ Physical Deployment Units)](#42-evolution-path-phased-strangler-extraction-logical-boundaries-physical-deployment-units)
+  - [4.1 Current implementation — NestJS Monorepo (`apps/` + `libs/`)](#41-current-implementation--nestjs-monorepo-apps--libs)
+  - [4.2 Evolution path — Phased Strangler Extraction (Logical Boundaries ≠ Physical Deployment Units)](#42-evolution-path--phased-strangler-extraction-logical-boundaries--physical-deployment-units)
 - [5. Data Model](#5-data-model)
-  - [5.1 Integrity constraints & Schema DDL (PostgreSQL 18)](#51-integrity-constraints-schema-ddl-postgresql-18)
-  - [5.2 Why range + GiST rather than a discrete slot table](#52-why-range-gist-rather-than-a-discrete-slot-table)
+  - [5.1 Integrity Constraints & Database Schema Architecture](#51-integrity-constraints--database-schema-architecture)
+  - [5.2 Why range + GiST rather than a discrete slot table](#52-why-range--gist-rather-than-a-discrete-slot-table)
 - [6. Appointment Lifecycle](#6-appointment-lifecycle)
 - [7. Data Flows](#7-data-flows)
-  - [7.1 Availability — `GET /v1/dealerships/{id}/availability?date=&service_type_id=`](#71-availability-get-v1dealershipsidavailabilitydateservicetypeid)
-  - [7.2 Booking — `POST /v1/appointments` (header `Idempotency-Key`)](#72-booking-post-v1appointments-header-idempotency-key)
-  - [7.3 Staff transition — `POST /v1/staff/appointments/{id}/approve` (header `If-Match: <version>`)](#73-staff-transition-post-v1staffappointmentsidapprove-header-if-match)
-  - [7.4 Customer edit, staff reassignment & staff rescheduling](#74-customer-edit-staff-reassignment-staff-rescheduling)
-  - [7.5 PENDING expiry — `ExpirePendingAppointmentsCron` (`apps/scheduler-worker`, every 5 minutes)](#75-pending-expiry-expirependingappointmentscron-appsscheduler-worker-every-5-minutes)
-  - [7.6 Atomic Slot Swap — `POST /v1/staff/appointments/swap`](#76-atomic-slot-swap-post-v1staffappointmentsswap)
-  - [7.7 Real-Time Live Stream via PostgreSQL `LISTEN / NOTIFY` & SSE (Customer, Dealership & Technician Views)](#77-real-time-live-stream-via-postgresql-listen-notify-sse-customer-dealership-technician-views)
-- [8. Concurrency & Reliability](#8-concurrency-reliability)
-  - [8.1 High-Concurrency Spike & Scaling Evolution (Handling 10,000+ Concurrent Requests)](#81-high-concurrency-spike-scaling-evolution-handling-10000-concurrent-requests)
+  - [7.1 Availability — `GET /v1/appointments/availability?dealership_id=&date=&service_type_ids=`](#71-availability--get-v1appointmentsavailabilitydealership_iddate_service_type_ids)
+  - [7.2 Booking — `POST /v1/appointments` (header `Idempotency-Key`)](#72-booking--post-v1appointments-header-idempotency-key)
+  - [7.3 Staff transition — `POST /v1/staff/appointments/{id}/approve` (header `If-Match: <version>`)](#73-staff-transition--post-v1staffappointmentsidapprove-header-if-match-version)
+  - [7.4 Customer edit, staff reassignment & staff rescheduling](#74-customer-edit-staff-reassignment--staff-rescheduling)
+  - [7.5 PENDING expiry — `ExpirePendingAppointmentsCron` (`apps/scheduler-worker`, every 5 minutes)](#75-pending-expiry--expirependingappointmentscron-appsscheduler-worker-every-5-minutes)
+  - [7.6 Atomic Slot Swap — `POST /v1/staff/appointments/swap`](#76-atomic-slot-swap--post-v1staffappointmentsswap)
+  - [7.7 Real-Time Live Stream via PostgreSQL `LISTEN / NOTIFY` & SSE (Customer, Dealership & Technician Views)](#77-real-time-live-stream-via-postgresql-listen--notify--sse-customer-dealership--technician-views)
+- [8. Concurrency & Reliability](#8-concurrency--reliability)
+  - [8.1 High-Concurrency Spike & Scaling Evolution (Handling 10,000+ Concurrent Requests)](#81-high-concurrency-spike--scaling-evolution-handling-10000-concurrent-requests)
 - [9. API Design](#9-api-design)
   - [9.1 Unified response envelope](#91-unified-response-envelope)
   - [9.2 Endpoints](#92-endpoints)
-  - [9.3 Core Engineering Directives & Standards](#93-core-engineering-directives-standards)
-- [10. Security — Authentication via (Mock) OIDC SSO](#10-security-authentication-via-mock-oidc-sso)
+  - [9.3 Core Engineering Directives & Standards](#93-core-engineering-directives--standards)
+- [10. Security — Authentication & Authorization via SSO Mockup](#10-security--authentication--authorization-via-sso-mockup)
+  - [10.1 Authentication via SSO Mockup](#101-authentication-via-sso-mockup)
+  - [10.2 Authorization & Domain Boundaries](#102-authorization--domain-boundaries)
 - [11. Observability](#11-observability)
-  - [11.1 Structured logging (Pino JSON to stdout + `AsyncLocalStorage`)](#111-structured-logging-pino-json-to-stdout-asynclocalstorage)
-  - [11.2 Metrics (Prometheus / OpenTelemetry-ready)](#112-metrics-prometheus-opentelemetry-ready)
-  - [11.3 Tracing & health](#113-tracing-health)
+  - [11.1 Structured logging (JSON stdout + `AsyncLocalStorage`)](#111-structured-logging-json-stdout--asynclocalstorage)
+  - [11.2 Metrics (Prometheus / OpenTelemetry Roadmap — Dự định triển khai)](#112-metrics-prometheus--opentelemetry-roadmap--dự-định-triển-khai)
+  - [11.3 Tracing & Health Probes](#113-tracing--health-probes)
 - [12. Multi-tenancy Evolution](#12-multi-tenancy-evolution)
 - [13. Testing Strategy](#13-testing-strategy)
 - [14. Technology Choices](#14-technology-choices)
@@ -72,8 +74,8 @@ Dealerships currently book service appointments manually. The goal is a backend 
 
 | Priority | Content |
 | :--- | :--- |
-| **P0 — core requirements** | Availability query, serialized booking with bay + qualified technician allocation, confirmed appointment record (auto-confirm), token authentication, concurrent HTTP booking tests |
-| **P1 — build for the future** | Approval flow (`requires_approval`), staff scope by dealership, reassignment, **staff reschedule (early-arrival override)**, **atomic slot swap**, **real-time SSE streams (`@Sse()` + PostgreSQL `LISTEN/NOTIFY` → RxJS `Subject` with event `version` ordering) & 2 live demo screens (Customer view + Dealership/Technician board)**, lifecycle state machine, PENDING expiry worker job, active-appointment limit (protected by customer advisory lock), atomic idempotency with 60s in-progress lease, optimistic locking, response envelope, structured Pino logging with masking & `@LogSpan()` decorator, minimal mock OIDC, OpenAPI/Swagger docs, module-boundary lint rules |
+| **P0 — core requirements** | Implemented an end-to-end booking flow: from token authentication and availability querying, to serialized allocation of bays and qualified technicians, resulting in auto-confirmed appointments. Validated system reliability using concurrent HTTP testing. |
+| **P1 — build for the future** | Approval flow (`requires_approval`), staff scope by dealership, reassignment, **staff reschedule (early-arrival override)**, **atomic slot swap**, **real-time SSE streams (`@Sse()` + PostgreSQL `LISTEN/NOTIFY` → RxJS `Subject` with event `version` ordering) & 2 live demo screens (Customer view + Dealership/Technician board)**, lifecycle state machine, PENDING expiry worker job, active-appointment limit (protected by customer advisory lock), atomic idempotency with 60s in-progress lease, optimistic locking, response envelope, structured JSON logging with masking & `@LogSpan()` decorator, SSO Mockup, OpenAPI/Swagger docs, module-boundary lint rules |
 | **P2 — design only** | Overrun re-allocation, automatic no-show, transactional outbox + event bus (Kafka / RabbitMQ), Row-Level Security, waitlist, shift / closure management APIs, real SSO, physical microservice split |
 
 ---
@@ -83,33 +85,34 @@ Dealerships currently book service appointments manually. The goal is a backend 
 ### 2.1 Scope & actors
 | # | Assumption |
 | :--- | :--- |
-| S1 | Only customers who already own an account and registered vehicles use the system. Sign-up and customer management are out of scope (seeded data). |
-| S2 | The customer explicitly chooses the dealership. No location-based recommendation. |
-| S3 | Every dealership can service every vehicle make/model. |
-| S4 | Staff belong to exactly one dealership and can only see and act on that dealership's appointments. |
-| S5 | Single tenant for now, but every business table carries `tenant_id` (one default tenant). |
+| S1 | **Core MVP Scheduling Focus:** The system strictly focuses on the **Appointment Scheduling lifecycle** (calculating availability, booking appointments, customer cancellation, and staff operations/approvals). All supporting entities outside this scheduling core (Dealerships, Workshop Settings, Service Bays, Technicians, Skills, Customers, Registered Vehicles) are view-only master data provided via database seeding (`docker/postgres/03-seed.sql`). Management CRUD for master entities is intentionally out of scope for the MVP. |
+| S2 | **Customer-Only Direct Booking:** The appointment booking function (`POST /v1/appointments`) is exclusively dedicated to authenticated Customers booking for their own registered vehicles. **Booking on behalf of another customer is strictly prohibited** and blocked via zero-trust identity checks (`identity_subject` / `customer_id` matching). Staff members do not create customer bookings; staff only manage lifecycle operations (approve, check-in, start, complete, reassign, reschedule, swap) for their assigned dealership. |
+| S3 | The customer explicitly chooses the dealership. No location-based recommendation. |
+| S4 | Every dealership can service every vehicle make/model. |
+| S5 | Staff belong to exactly one dealership and can only see and act on that dealership's appointments. |
+| S6 | Single tenant for now, but every business table carries `tenant_id` (one default tenant). |
 
 ### 2.2 Resources
 | # | Assumption |
 | :--- | :--- |
 | R1 | Each dealership has a fixed pool of **10 service bays and 10 technicians** (seeded, no CRUD). |
-| R2 | One vehicle is handled by exactly **one technician in one bay** for the whole appointment. |
+| R2 | **1 Bay, 1 Technician, Multiple Services per Appointment:** One appointment is allocated to exactly **one Service Bay** and **one Technician**, but can include **multiple services** (`service_type_ids: bigint[]`, itemized in `appointment_details`). |
 | R3 | A technician works on one vehicle at a time; a bay holds one vehicle at a time. |
-| R4 | Each `ServiceType` requires one `Skill`; a technician may hold several skills. |
-| R5 | When the customer does not pick a technician, the scheduler uses **best-fit**: the qualified, free technician with the **fewest skills**, then the lowest load that day — so versatile technicians stay available for specialist work. Bays: lowest load that day. |
+| R4 | **Contiguous Service Execution & Skill Qualification:** All services within a single appointment execute **contiguously in time** without gaps or pauses across different time blocks (`start_at` to `end_at = start_at + sum(duration_minutes)`). The single assigned technician must possess **all the required skills** corresponding to every service type included in that appointment. |
+| R5 | When the customer does not pick a technician, the system **auto-assigns the best fit**: the qualified, free technician whose **skills match the requested services**, then the lowest load that day. Bays: lowest load that day. |
 | R6 | Technician shifts / leave and bay closures are **not managed** in the MVP. Tables `technician_unavailabilities` and `bay_closures` exist (empty by default) and are already excluded in availability and allocation queries, so adding the data later requires no code change. |
 
 ### 2.3 Booking rules & Slot-Grid Alignment (per-dealership `workshop_settings`)
 | # | Assumption | Default |
 | :--- | :--- | :--- |
 | B1 | **Mandatory Default Service Duration:** Every `ServiceType` defines a fixed standard labor time `duration_minutes` applied immediately when selected (`end_at = start_at + service_type.duration_minutes`). Customers do not supply custom durations. | — |
-| B2 | **Turnover Buffer:** Resources are occupied during `[start_at, end_at + buffer)` (`occupied_until = end_at + buffer_minutes`) to absorb small overruns and bay preparation. | `buffer_minutes = 15` |
+| B2 | **Turnover Buffer:** Resources are occupied during `[start_at, end_at + buffer)` (`occupied_until = end_at + buffer_minutes`) to allow for minor delays and bay setup. | `buffer_minutes = 15` |
 | B3 | **Slot-Grid Alignment (Zero Fragmentation Rule):** To eliminate dead time between appointments on the `slot_minutes` (`30 min`) grid while keeping the `15 min` buffer separate, `ServiceType` durations are standardized so that **`(duration_minutes + buffer_minutes)` is an exact multiple of `slot_minutes` (`30 min`)**. Thus `occupied_until` always lands squarely on the next valid `start_at` boundary (0% slot fragmentation). | `(duration + 15) % 30 == 0` |
-| B4 | Half-open intervals `[start, end)` — back-to-back bookings (`08:00–09:00` occupied followed by `09:00` start) do not conflict. | — |
+| B4 | The system uses half-open time intervals `[start, end)`. This ensures that back-to-back bookings (e.g., a job ending at 09:00 and the next starting exactly at 09:00) do not conflict. | — |
 | B5 | Start times align to the slot grid inside workshop hours (dealership timezone). **`end_at ≤ closes_at`**; the buffer may extend past closing time. | `slot = 30`, `08:00–18:00` |
 | B6 | Booking window: `start_at ≥ now + lead_time` and `start_at ≤ now + horizon`. | `120 min`, `30 days` |
 | B7 | A vehicle cannot have two overlapping active appointments anywhere. | — |
-| B8 | A customer can hold at most N active appointments across all dealerships (prevents monopolising capacity). Enforced globally via `pg_advisory_xact_lock(NS_CUSTOMER::int4, customer_id::int4)` before the dealership lock. | `max_active_per_customer = 3` |
+| B8 | A customer can hold at most N active appointments across all dealerships (keeps resources available for other bookings). Enforced globally via `pg_advisory_xact_lock(NS_CUSTOMER::int4, customer_id::int4)` before the dealership lock. | `max_active_per_customer = 3` |
 | B9 | `requires_approval = false` → appointment is **`CONFIRMED` immediately**; `true` → **`PENDING`** until staff approves. In both cases resources are **reserved at booking time**. | Seed: dealership A `false`, dealership B `true` |
 
 #### Seeded Service Catalog (Aligned to 30-Minute Grid with 15-Minute Buffer)
@@ -124,21 +127,23 @@ Dealerships currently book service appointments manually. The goal is a backend 
 ### 2.4 Lifecycle rules
 | # | Assumption |
 | :--- | :--- |
-| L1 | **Customer edits** (`PENDING` / `CONFIRMED`, until `start_at − cancellation_cutoff`): `start_at`, `service_type_id`, `vehicle_id` (own vehicle), `technician_id` (must be qualified and free), `notes`. The current bay / technician are kept if still free for the new interval, otherwise re-allocated. |
+| L1 | **Customers can edit** their bookings (PENDING or CONFIRMED) before the cancellation cutoff. They can update the start time, service type, vehicle, notes, and request a specific technician (if qualified and available). If the schedule changes, the system will keep the originally assigned bay and technician if possible, or automatically reallocate them if they are busy. |
 | L2 | At a `requires_approval` dealership, a customer change to time, service type, vehicle or technician returns a `CONFIRMED` appointment to `PENDING`; a notes-only change keeps the status. At auto-confirm dealerships the status stays `CONFIRMED`. |
 | L3 | **Staff reassignment & staff rescheduling** (`PENDING` / `CONFIRMED` / `CHECKED_IN`): Staff may reassign technician and/or bay (`POST /v1/staff/appointments/{id}/reassign`). For early arrival (Scenario A/B), staff may reschedule `start_at` (`POST /v1/staff/appointments/{id}/reschedule`) which **overrides customer lead_time and cancellation_cutoff**, validating under dealership advisory lock that both a free qualified technician and a free bay exist. Status is unchanged. |
-| L4 | **Cancellation** by the customer until `start_at − cancellation_cutoff` (default 120 min) is a **soft cancel** (`CANCELLED`, `cancelled_at`, `cancelled_by`, `cancel_reason`). Resources are released immediately because only active statuses occupy resources. |
-| L5 | **PENDING expiry (system job):** a `PENDING` appointment still not approved when `now ≥ start_at − cancellation_cutoff` becomes `EXPIRED` and releases its resources. This is the only automatic transition. |
+| L4 | **Cancellation** by the customer before the cancellation cutoff (default: 120 minutes before the start time) (`now` < `start_at − cancellation_cutoff`). This triggers a **soft cancel** (`CANCELLED`, `cancelled_at`, `cancelled_by`, `cancel_reason`). Resources are released immediately because only active statuses occupy resources. |
+| L5 | **PENDING expiry (system job):** a `PENDING` appointment still not approved by the cancellation cutoff time (`now ≥ start_at − cancellation_cutoff`) the system automatically changes its status to `EXPIRED` and immediately releases the reserved resources. This is the only automated status transition in the system. |
 | L6 | Operational transitions (`CHECKED_IN → IN_PROGRESS → COMPLETED`, `NO_SHOW`) are **manual, staff-only, and only on the appointment day**. `NO_SHOW` is allowed only after `start_at + grace` (default 15 min). Future-dated appointments can only be edited, reassigned, swapped or cancelled. |
 | L7 | **Early Completion:** When staff mark an `IN_PROGRESS` appointment as `COMPLETED` ahead of `end_at`, its status leaves the occupying set immediately — releasing both its `ServiceBay` and `Technician` for the remainder of the scheduled window while keeping the planned `start_at / end_at` intact for SLA comparison. |
 | L8 | **Early Arrival & Slot Swap (3-Scenario Operational Rule):** If Customer 2 (booked at `10:00–11:00` with `Technician 1`) arrives at `08:00` while Customer 1's `08:00–09:00` booking on `Technician 1` / `Bay 1` has not yet arrived:<br/>1. **Scenario A — Move up using other free resources (before grace period expires):** Customer 1's `08:00–09:00` slot cannot be taken while within `grace_minutes`. Staff call `POST /v1/staff/appointments/{customer2_id}/reschedule` to move Customer 2 to `08:00–09:00`. The system checks that **BOTH** another qualified `Technician` **AND** another free `ServiceBay` are available at `08:00–09:00` (preventing bay exhaustion).<br/>2. **Scenario B — After Grace Period (`08:15`):** Once `now ≥ start_at + grace_minutes` without Customer 1 arriving, staff mark Customer 1 `NO_SHOW` (releasing `Bay 1` and `Technician 1`) and call staff `reschedule` to move Customer 2 into the `08:00` slot with `Technician 1` and `Bay 1`.<br/>3. **Scenario C — Atomic Slot Swap (`POST /v1/staff/appointments/swap`):** If Customer 1 informs the dealership they will arrive late at `10:00` and agrees to trade slots, staff execute an atomic swap between the two appointments (validating skill compatibility, duration fit without colliding with adjacent bookings, and bay/technician availability). |
 | L9 | **Statuses that occupy resources:** `PENDING, CONFIRMED, CHECKED_IN, IN_PROGRESS`. *Note on `'SWAPPING'`:* `'SWAPPING'` is an internal, in-transaction transient state during atomic slot swap that temporarily leaves the partial GiST index; it is committed as `CONFIRMED` or `CHECKED_IN` before the transaction finishes and never persists. |
 
 #### Architectural Invariants
-1. **Lock Acquisition Order Invariant (Deadlock Prevention):** Whenever multiple locks are required, they MUST be acquired in this exact global hierarchy:
+1. To prevent deadlocks, whenever multiple locks are required, they **MUST** be acquired in this exact global hierarchy:
    $$\text{Customer Advisory Lock} \longrightarrow \text{Dealership Advisory Lock} \longrightarrow \text{Appointment Row Locks (FOR UPDATE ordered by id ASC)}$$
-2. **Lock Invariant:** Every code path that **adds or shifts resource occupancy** (`create`, customer `edit`, staff `reassign`, staff `reschedule`, staff `swap`) MUST acquire `pg_advisory_xact_lock(NS_BOOKING::int4, dealership_id::int4)`. Code paths that **only release or keep occupancy within the existing window** (`approve`, `reject`, `cancel`, `check-in`, `start`, `complete`, `no-show`, worker `expire`) do NOT acquire the dealership advisory lock; they rely strictly on row-level optimistic locking (`version`).
-3. **Version Invariant:** **Every** write to `appointments` (customer edit, staff status transitions, `reassign`, `reschedule`, `swap`, and worker `expire`) MUST increment `version = version + 1`. This guarantees SSE clients and optimistic locks always detect stale representations.
+2. **Concurrency Control (Advisory vs. Optimistic Locking):** 
+    * **Modifying Resources:** Any action that adds or shifts resource occupancy (`create`, customer `edit`, staff `reassign`, staff `reschedule`, staff `swap`) **MUST** acquire `pg_advisory_xact_lock(NS_BOOKING::int4, dealership_id::int4)`. 
+    * **Releasing/Retaining Resources:** Actions that strictly release time or keep occupancy within the exact same window (`approve`, `reject`, `cancel`, `check-in`, `start`, `complete`, `no-show`, worker `expire`) do **NOT** need acquire the dealership advisory lock. They rely purely on row-level optimistic locking. (`version`).
+3. **Version Increment Invariant:** **Every** write to `appointments` (customer edit, staff status transitions, `reassign`, `reschedule`, `swap`, and worker `expire`) **MUST** increment `version = version + 1`. This guarantees SSE clients and optimistic locks always detect stale representations.
 
 ---
 
@@ -152,7 +157,7 @@ source/
 │   ├── scheduler-api/          # Stateless HTTP REST API server (controllers, Swagger bootstrap)
 │   └── scheduler-worker/       # Single-replica background cronjob worker (PENDING expiry job)
 └── libs/
-    ├── common/                 # (@app/common) Shared kernel: ALS context, Pino logger, @LogSpan(),
+    ├── common/                 # (@app/common) Shared kernel: ALS context, structured JSON logger, @LogSpan(),
     │                           # ResponseEnvelopeInterceptor, GlobalExceptionFilter, OidcJwtAuthGuard,
     │                           # IdempotencyInterceptor, AuditColumnsSubscriber
     ├── contracts/              # (@app/contracts) Public DI interface tokens & cross-module DTOs
@@ -160,7 +165,7 @@ source/
     │                           # Resource (Bays, Technicians, Skills), Appointment, StateMachine
     ├── crm/                    # (@app/crm) Customer & Vehicle lifecycle domain
     ├── organization/           # (@app/organization) Tenant, Dealership directory & Staff domain
-    └── sso-mock/               # (@app/sso-mock) Minimal Mock OIDC Provider (local/test only)
+    └── sso-mock/               # (@app/sso-mock) Mock SSO & Token Generator (local/test only)
 ```
 
 | Monorepo Package | Nature & Boundary | Owns |
@@ -169,7 +174,7 @@ source/
 | **`@app/crm`** (`libs/crm`) | **Customer & Asset lifecycle domain (PII / GDPR boundary)** — high data growth; expands into Lead Management (Demand domain / Scenario C) and ownership history | Customers, vehicles, ownership |
 | **`@app/organization`** (`libs/organization`) | **Organizational & Tenant directory (Platform foundation)** — low rate of change, small dataset, shared across domains | Tenants, dealerships (identity, address, primary timezone), staff |
 | **`@app/sso-mock`** (`libs/sso-mock`) | Infrastructure stand-in for an external IdP | OAuth clients, login identities, RSA signing keys (mounted only when `SSO_MOCK_ENABLED=true`) |
-| **`@app/contracts` & `@app/common`** | Shared contracts & infrastructure kernel | Cross-module interfaces/DTOs, JWT verification, `AsyncLocalStorage` context, Pino logging, response envelope, idempotency, audit subscriber |
+| **`@app/contracts` & `@app/common`** | Shared contracts & infrastructure kernel | Cross-module interfaces/DTOs, JWT verification, `AsyncLocalStorage` context, structured JSON logging, response envelope, idempotency, audit subscriber |
 
 > **Key design decisions:**
 > 1. **Single-transaction booking hot path & Zero Organization Reads:** Bays, technicians, booking rules and operational **`timezone`** all live directly in `workshop_settings` inside `@app/workshop`. The booking hot path — *serialize per customer & dealership → pick bay + technician → insert appointment* — stays inside **one library, one database, one ACID transaction**, with zero runtime dependency or cross-module reads to `@app/organization`.
@@ -199,8 +204,8 @@ flowchart TB
     subgraph Monorepo["NestJS Monorepo Runtime (Node.js 22+ LTS)"]
         subgraph APIApp["apps/scheduler-api (Stateless, Multi-Pod)"]
             MW1["CorrelationIdMiddleware (AsyncLocalStorage)"]
-            MW2["LoggingInterceptor (Pino + PII Redaction)"]
-            MW3["OidcJwtAuthGuard (jose JWKS)"]
+            MW2["LoggingInterceptor (Structured JSON + PII Redaction)"]
+            MW3["OidcJwtAuthGuard (JWKS Token Verification)"]
             MW4["IdempotencyInterceptor"]
             RESP["ResponseEnvelopeInterceptor + GlobalExceptionFilter"]
             SSE["@Sse() Stream Controllers<br/>(/v1/appointments/stream & /v1/staff/appointments/stream)"]
@@ -211,7 +216,7 @@ flowchart TB
         end
 
         subgraph Libs["Domain & Infrastructure Libraries (libs/)"]
-            SSO["@app/sso-mock<br/>(local/test only)"]
+            SSO["@app/sso-mock<br/>(Auth Token Mock)"]
             ORG["@app/organization"]
             CRM["@app/crm"]
             WS["@app/workshop<br/>Settings, Availability, Allocation, StateMachine, AppointmentStreamService"]
@@ -222,7 +227,7 @@ flowchart TB
 
     PG[("PostgreSQL 18<br/>advisory locks, btree_gist exclusion constraints")]
     REDIS[("Redis 7 Cache<br/>Hash Cache (HSET/HGET) for Master Data & Availability")]
-    LOG["Structured JSON logs (Pino stdout)"]
+    LOG["Structured JSON logs (stdout)"]
 
     OAS --> MW1
     DEMO --> MW1
@@ -492,244 +497,42 @@ erDiagram
   - `idempotency_keys (subject, key, request_hash, status, locked_until, response, expires_at)` with `UNIQUE(subject, key)`: `status` is `'IN_PROGRESS'` or `'COMPLETED'`. While `IN_PROGRESS`, a short lease `locked_until = now() + interval '60 seconds'` prevents permanent deadlocks if the Node process crashes mid-flight. The transition to `'COMPLETED'` (with the serialized response JSON) is executed **within the same database transaction** as the appointment insert, making creation and idempotency completion 100% atomic.
   - Mock SSO tables `sso_clients`, `sso_users`. `outbox_events` is P2.
 
-### 5.1 Integrity constraints & Schema DDL (PostgreSQL 18)
+### 5.1 Integrity Constraints & Database Schema Architecture
 
-```sql
-CREATE EXTENSION IF NOT EXISTS btree_gist;
+The database architecture is designed with **defense-in-depth storage integrity**, ensuring double-booking and invalid states are impossible at the database engine tier, independent of application code:
 
--- 1. Dealerships & Staff
-CREATE TABLE IF NOT EXISTS dealerships (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    code VARCHAR(50) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    address VARCHAR(500) NOT NULL,
-    timezone VARCHAR(100) NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100),
-    CONSTRAINT uq_dealership_tenant_code UNIQUE (tenant_id, code)
-);
+1. **Storage-Level Anti-Collision (PostgreSQL `btree_gist` Exclusion Constraints):**
+   - **`no_vehicle_overlap`:** Prevents the same vehicle from having two overlapping active service appointments across any dealership:
+     ```sql
+     CONSTRAINT no_vehicle_overlap EXCLUDE USING gist (
+         vehicle_id WITH =,
+         period WITH &&
+     ) WHERE (status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'))
+     ```
+   - **`no_technician_overlap`:** Guarantees a technician cannot be assigned to overlapping active appointments:
+     ```sql
+     CONSTRAINT no_technician_overlap EXCLUDE USING gist (
+         technician_id WITH =,
+         period WITH &&
+     ) WHERE (status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'))
+     ```
+   - **`no_bay_overlap`:** Guarantees a physical service bay cannot accommodate multiple vehicles concurrently:
+     ```sql
+     CONSTRAINT no_bay_overlap EXCLUDE USING gist (
+         service_bay_id WITH =,
+         period WITH &&
+     ) WHERE (status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'))
+     ```
+2. **Business Identification & Uniqueness:**
+   - Every master entity enforces a human-readable unique business `code` (`uq_dealership_tenant_code`, `uq_customer_tenant_code`, `uq_vehicle_tenant_vin`, `uq_service_type_tenant_code`, `uq_bay_tenant_code`, `uq_technician_tenant_code`, `uq_appointment_tenant_code`).
+3. **Optimistic Locking:**
+   - The `version` integer column on `appointments` increments monotonically on every mutation. Conflicting updates return HTTP `409 VERSION_CONFLICT`.
+4. **Complete SQL Schema & Seed References:**
+   - For the full PostgreSQL 18 table definitions, indices, and constraints, refer directly to the source DDL:
+     - 📄 **Full Schema DDL:** [`docker/postgres/02-schema.sql`](./docker/postgres/02-schema.sql)
+     - 📄 **Seed Data Script:** [`docker/postgres/03-seed.sql`](./docker/postgres/03-seed.sql)
 
-CREATE TABLE IF NOT EXISTS staff_members (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    dealership_id BIGINT NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
-    identity_subject UUID NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100),
-    CONSTRAINT uq_staff_tenant_subject UNIQUE (tenant_id, identity_subject)
-);
-
--- 2. Customers & Vehicles
-CREATE TABLE IF NOT EXISTS customers (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    identity_subject UUID NOT NULL,
-    code VARCHAR(50) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    phone VARCHAR(50) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100),
-    CONSTRAINT uq_customer_tenant_subject UNIQUE (tenant_id, identity_subject),
-    CONSTRAINT uq_customer_tenant_code UNIQUE (tenant_id, code)
-);
-
-CREATE TABLE IF NOT EXISTS vehicles (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    customer_id BIGINT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-    vin VARCHAR(17) NOT NULL,
-    license_plate VARCHAR(20) NOT NULL,
-    make VARCHAR(100) NOT NULL,
-    model VARCHAR(100) NOT NULL,
-    year INT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100),
-    CONSTRAINT uq_vehicle_tenant_vin UNIQUE (tenant_id, vin)
-);
-
--- 3. Workshop Settings
-CREATE TABLE IF NOT EXISTS workshop_settings (
-    dealership_id BIGINT PRIMARY KEY REFERENCES dealerships(id) ON DELETE CASCADE,
-    tenant_id BIGINT NOT NULL,
-    timezone VARCHAR(100) NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
-    opens_at TIME NOT NULL DEFAULT '08:00:00',
-    closes_at TIME NOT NULL DEFAULT '18:00:00',
-    slot_minutes INT NOT NULL DEFAULT 30,
-    buffer_minutes INT NOT NULL DEFAULT 15,
-    grace_minutes INT NOT NULL DEFAULT 15,
-    lead_time_minutes INT NOT NULL DEFAULT 60,
-    horizon_days INT NOT NULL DEFAULT 30,
-    cancellation_cutoff_minutes INT NOT NULL DEFAULT 120,
-    requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
-    max_active_per_customer INT NOT NULL DEFAULT 3,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100)
-);
-
--- 4. Skills & Service Types
-CREATE TABLE IF NOT EXISTS skills (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    code VARCHAR(50) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100),
-    CONSTRAINT uq_skill_tenant_code UNIQUE (tenant_id, code)
-);
-
-CREATE TABLE IF NOT EXISTS service_types (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    skill_id BIGINT REFERENCES skills(id) ON DELETE SET NULL,
-    code VARCHAR(50) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    duration_minutes INT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100),
-    CONSTRAINT uq_service_type_tenant_code UNIQUE (tenant_id, code)
-);
-
--- 5. Service Bays & Technicians
-CREATE TABLE IF NOT EXISTS service_bays (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    dealership_id BIGINT NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
-    code VARCHAR(50) NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100),
-    CONSTRAINT uq_bay_dealership_code UNIQUE (dealership_id, code)
-);
-
-CREATE TABLE IF NOT EXISTS technicians (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    dealership_id BIGINT NOT NULL REFERENCES dealerships(id) ON DELETE CASCADE,
-    code VARCHAR(50) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100),
-    CONSTRAINT uq_technician_dealership_code UNIQUE (dealership_id, code)
-);
-
-CREATE TABLE IF NOT EXISTS technician_skills (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    technician_id BIGINT NOT NULL REFERENCES technicians(id) ON DELETE CASCADE,
-    skill_id BIGINT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100),
-    CONSTRAINT uq_tech_skill UNIQUE (technician_id, skill_id)
-);
-
--- 6. Appointments & GiST Exclusion Constraints
-CREATE TABLE IF NOT EXISTS appointments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    reference_code VARCHAR(64) NOT NULL UNIQUE,
-    dealership_id BIGINT NOT NULL REFERENCES dealerships(id),
-    customer_id BIGINT NOT NULL REFERENCES customers(id),
-    vehicle_id BIGINT NOT NULL REFERENCES vehicles(id),
-    service_type_id BIGINT NOT NULL REFERENCES service_types(id),
-    service_type_ids BIGINT[] DEFAULT '{}',
-    service_bay_id BIGINT NOT NULL REFERENCES service_bays(id),
-    technician_id BIGINT NOT NULL REFERENCES technicians(id),
-    customer_name VARCHAR(255) NOT NULL,
-    vehicle_plate VARCHAR(50) NOT NULL,
-    vehicle_label VARCHAR(255) NOT NULL,
-    start_at TIMESTAMPTZ NOT NULL,
-    end_at TIMESTAMPTZ NOT NULL,
-    occupied_until TIMESTAMPTZ NOT NULL,
-    period tstzrange GENERATED ALWAYS AS (tstzrange(start_at, occupied_until, '[)')) STORED,
-    status VARCHAR(50) NOT NULL DEFAULT 'CONFIRMED',
-    version INT NOT NULL DEFAULT 1,
-    notes TEXT,
-    cancel_reason VARCHAR(255),
-    cancelled_at TIMESTAMPTZ,
-    cancelled_by VARCHAR(100),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100)
-);
-
-ALTER TABLE appointments ADD CONSTRAINT no_bay_overlap EXCLUDE USING gist
-    (service_bay_id WITH =, period WITH &&)
-    WHERE (status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'));
-
-ALTER TABLE appointments ADD CONSTRAINT no_technician_overlap EXCLUDE USING gist
-    (technician_id WITH =, period WITH &&)
-    WHERE (status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'));
-
-ALTER TABLE appointments ADD CONSTRAINT no_vehicle_overlap EXCLUDE USING gist
-    (vehicle_id WITH =, period WITH &&)
-    WHERE (status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS'));
-
--- 6.1 Appointment Details (Multi-Service Line Items)
-CREATE TABLE IF NOT EXISTS appointment_details (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL DEFAULT 1,
-    appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
-    service_type_id BIGINT NOT NULL REFERENCES service_types(id),
-    code VARCHAR(50) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    duration_minutes INT NOT NULL,
-    price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-    sequence_order INT NOT NULL DEFAULT 1,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by VARCHAR(100),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_by VARCHAR(100)
-);
-
--- 7. Appointment Events Audit Trail
-CREATE TABLE IF NOT EXISTS appointment_events (
-    id BIGSERIAL PRIMARY KEY,
-    appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
-    from_status VARCHAR(50),
-    to_status VARCHAR(50) NOT NULL,
-    actor_subject UUID,
-    actor_type VARCHAR(50) NOT NULL DEFAULT 'customer',
-    changes JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 8. Performance Indexes
-CREATE INDEX IF NOT EXISTS idx_appt_dealership_start ON appointments (dealership_id, start_at);
-CREATE INDEX IF NOT EXISTS idx_appt_customer_active ON appointments (customer_id)
-    WHERE status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS');
-CREATE INDEX IF NOT EXISTS idx_appt_pending_expiry ON appointments (start_at) WHERE status = 'PENDING';
-CREATE INDEX IF NOT EXISTS idx_appt_details_appt_id ON appointment_details (appointment_id);
-CREATE INDEX IF NOT EXISTS idx_service_bays_dealership_active ON service_bays (dealership_id, id) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_technicians_dealership_active ON technicians (dealership_id, id) WHERE is_active = TRUE;
-CREATE INDEX IF NOT EXISTS idx_tech_skills_skill_tech ON technician_skills (skill_id, technician_id);
-```
-
-The exclusion constraints make double-booking **impossible at the storage level**, independent of application code; they are the last line of defence behind the per-dealership advisory lock (§8).
+---
 
 ### 5.2 Why range + GiST rather than a discrete slot table
 | Criterion | Range + GiST (chosen) | Slot table (one row per 30 min) |
@@ -778,13 +581,13 @@ All status mutations are governed strictly by `AppointmentStateMachine` (validat
 
 ## 7. Data Flows
 
-### 7.1 Availability — `GET /v1/dealerships/{id}/availability?date=&service_type_id=`
+### 7.1 Availability — `GET /v1/appointments/availability?dealership_id=&date=&service_type_ids=`
 **One parameterized SQL statement** computes every slot of the day:
 1. `generate_series` produces candidate start times on the slot grid within workshop hours (respecting `end_at ≤ closes_at`, lead time and horizon).
-2. For each candidate interval `[start, start + duration + buffer)`, count active bays with no overlapping active appointment and no closure, and active technicians holding the required skill with no overlapping active appointment and no unavailability.
+2. For each candidate interval `[start, start + sum(duration_minutes) + buffer)`, count active bays with no overlapping active appointment and no closure, and active technicians holding the required skills for all `service_type_ids` with no overlapping active appointment and no unavailability.
 3. Return `free_bays`, `free_technicians`, `remaining_capacity = min(…)` per slot.
 
-`GET /v1/dealerships/{id}/technicians?service_type_id=&start_at=` returns the qualified technicians free for that interval (display name only), so a customer or staff member can pick one.
+`GET /v1/dealerships/{id}/technicians?service_type_ids=&start_at=` returns the qualified technicians free for that interval (display name only), so a customer or staff member can pick one.
 
 ### 7.2 Booking — `POST /v1/appointments` (header `Idempotency-Key`)
 
@@ -792,38 +595,38 @@ All status mutations are governed strictly by `AppointmentStateMachine` (validat
 sequenceDiagram
     autonumber
     actor C as Customer
-    participant MW as NestJS Guards & Interceptors
+    participant MW as NestJS Guards and Interceptors
     participant UC as CreateAppointmentUseCase
-    participant CRM as CRM_DIRECTORY_CONTRACT
+    participant CRM as CRM Directory Contract
     participant DB as PostgreSQL (Single EntityManager TX)
 
-    C->>MW: POST /v1/appointments {dealership_id, vehicle_id, service_type_id, start_at, technician_id?}
-    MW->>MW: CorrelationId (AsyncLocalStorage), REQUEST_START log, OidcJwtAuthGuard
-    MW->>DB: INSERT idempotency_keys (IN_PROGRESS, locked_until = now() + 60s) - UNIQUE(subject, key)
-    MW->>UC: validated DTO + ActorContext
-    UC->>CRM: findVehicleOwnedByCustomer() (returns snapshot data)
-    UC->>DB: dataSource.transaction(async (manager) => { ... })
-    UC->>DB: manager.query("SET LOCAL lock_timeout = '2s'; SET LOCAL statement_timeout = '5s'")
-    Note over UC,DB: Strict Lock Hierarchy (Case 6 Prevention & int4 Cast)
-    UC->>DB: manager.query("SELECT pg_advisory_xact_lock($1::int4, $2::int4)", [NS_CUSTOMER, customerId])
-    UC->>DB: manager.query("SELECT pg_advisory_xact_lock($1::int4, $2::int4)", [NS_BOOKING, dealershipId])
-    UC->>UC: Recompute time rules against DB clock (now >= start_at - lead_time, etc.)
-    UC->>DB: check active-appointment limit across all dealerships (under NS_CUSTOMER lock)
-    UC->>DB: check vehicle overlap & pick free bay + best-fit qualified technician (under NS_BOOKING lock)
-    alt bay and technician found
-        UC->>DB: manager.insert(Appointment) + manager.insert(AppointmentEvent)
+    C->>MW: POST /v1/appointments (dealership_id, vehicle_id, service_type_ids, start_at)
+    MW->>MW: Context Setup (AsyncLocalStorage), REQUEST_START log, AuthGuard
+    MW->>DB: INSERT idempotency_keys (IN_PROGRESS, lease 60s)
+    MW->>UC: Validated DTO with ActorContext
+    UC->>CRM: findVehicleOwnedByCustomer (returns snapshot data)
+    UC->>DB: Open transactional connection (dataSource.transaction)
+    UC->>DB: SET LOCAL lock_timeout = 2s and statement_timeout = 5s
+    Note over UC,DB: Strict Lock Hierarchy (Case 6 Prevention and int4 Cast)
+    UC->>DB: SELECT pg_advisory_xact_lock(NS_CUSTOMER, customerId)
+    UC->>DB: SELECT pg_advisory_xact_lock(NS_BOOKING, dealershipId)
+    UC->>UC: Recompute time rules against DB clock (lead time and horizon)
+    UC->>DB: Check active-appointment limit across dealerships (under NS_CUSTOMER lock)
+    UC->>DB: Check vehicle overlap and pick free bay plus qualified technician
+    alt Bay and technician available
+        UC->>DB: INSERT appointments and appointment_events
         Note over UC,DB: Atomic Idempotency Completion inside TX (Case 11)
-        UC->>DB: manager.update(IdempotencyKey, {status: 'COMPLETED', response: payload})
+        UC->>DB: UPDATE idempotency_keys status = COMPLETED
         Note over UC,DB: Transactional Event Broadcast (Case 12)
-        UC->>DB: manager.query("SELECT pg_notify('appointment_events', $1)", [eventPayload])
-        UC->>DB: COMMIT (releases all advisory locks; triggers pg_notify to API listeners)
-        UC-->>C: 201 {statusCode, errorCode: null, data: appointment}
-    else no capacity
-        UC->>DB: ROLLBACK (releases locks; drops uncommitted pg_notify)
+        UC->>DB: Broadcast event via pg_notify(appointment_events)
+        UC->>DB: COMMIT (releases all advisory locks and triggers pg_notify)
+        UC-->>C: 201 Created (appointment data payload)
+    else Capacity exhausted
+        UC->>DB: ROLLBACK (releases locks and drops uncommitted notification)
         UC->>DB: DELETE FROM idempotency_keys (allows retry)
-        UC-->>C: 409 SLOT_UNAVAILABLE {reason: 'NO_FREE_BAY' | 'NO_QUALIFIED_TECHNICIAN', alternatives}
+        UC-->>C: 409 SLOT_UNAVAILABLE (NO_FREE_BAY or NO_QUALIFIED_TECHNICIAN)
     end
-    MW->>MW: REQUEST_END log (full response, duration_ms)
+    MW->>MW: REQUEST_END log (full response, latency)
 ```
 
 > **Critical Node.js / TypeORM Connection-Pool Rule:** Because Node.js `pg` uses a connection pool, calling `this.repository.find()` outside the transaction's `EntityManager` would borrow a *different* connection from the pool that does not hold `pg_advisory_xact_lock` or `SET LOCAL lock_timeout`. Every query inside `CreateAppointmentUseCase`, `UpdateAppointmentUseCase`, `ReassignAppointmentUseCase`, `RescheduleAppointmentUseCase`, and `SwapAppointmentsUseCase` **must execute exclusively through the transactional `manager: EntityManager`** passed by `dataSource.transaction()`.
@@ -837,7 +640,7 @@ sequenceDiagram
 ### 7.4 Customer edit, staff reassignment & staff rescheduling
 Inside `dataSource.transaction(async (manager) => { ... })`:
 1. **Acquire Locks in Strict Order:**
-   - For Customer Edit: `pg_advisory_xact_lock(NS_CUSTOMER::int4, customerId::int4)` $\to$ `pg_advisory_xact_lock(NS_BOOKING::int4, dealershipId::int4)`.
+   - For Customer Edit: `pg_advisory_xact_lock(NS_CUSTOMER::int4, customerId::int4)` → `pg_advisory_xact_lock(NS_BOOKING::int4, dealershipId::int4)`.
    - For Staff Reassignment (`POST /v1/staff/appointments/{id}/reassign`) and Staff Reschedule (`POST /v1/staff/appointments/{id}/reschedule`): `pg_advisory_xact_lock(NS_BOOKING::int4, dealershipId::int4)`.
 2. Lock appointment row `FOR UPDATE`, verify `version`.
 3. **Staff Reschedule (`POST /v1/staff/appointments/{id}/reschedule` — Scenario A & B Early Arrival):**
@@ -864,24 +667,24 @@ sequenceDiagram
     participant API as SwapAppointmentsUseCase
     participant DB as PostgreSQL 18 (Single EntityManager TX)
 
-    Staff->>API: POST /v1/staff/appointments/swap {first_id, first_version, second_id, second_version}
-    API->>DB: dataSource.transaction() + SET LOCAL lock_timeout = '2s'
-    API->>DB: SELECT pg_advisory_xact_lock(NS_BOOKING::int4, dealership_id::int4)
+    Staff->>API: POST /v1/staff/appointments/swap (first_id, second_id, versions)
+    API->>DB: Open transaction and SET LOCAL lock_timeout = 2s
+    API->>DB: SELECT pg_advisory_xact_lock(NS_BOOKING, dealership_id)
     API->>DB: SELECT both appointments FOR UPDATE (ordered by id ASC to prevent deadlock)
-    API->>API: Verify both belong to staff's dealership, versions match, statuses in (PENDING, CONFIRMED, CHECKED_IN)
-    API->>API: Compute swapped intervals [new_start_at, new_occupied_until) using each appointment's own duration + buffer
-    API->>API: Verify both technicians hold required skills for the swapped service types & end_at <= closes_at
-    API->>DB: Step 1: Temporarily set first appointment status = 'SWAPPING' (leaves partial GiST index)
-    API->>DB: Step 2: UPDATE second appointment to first's start_at, bay & technician, version = version + 1 (GiST verifies no 3rd-party overlap)
-    API->>DB: Step 3: UPDATE first appointment to second's start_at, bay, technician, restore status, version = version + 1 (GiST verifies no overlap)
+    API->>API: Verify same dealership, matching versions, active statuses
+    API->>API: Compute swapped time windows using each appointment duration plus buffer
+    API->>API: Verify both technicians hold required skills and end_at is within closes_at
+    API->>DB: Step 1 - Temporarily set first appointment status = SWAPPING (leaves partial GiST index)
+    API->>DB: Step 2 - UPDATE second appointment to first slot, bay and technician, version = version + 1
+    API->>DB: Step 3 - UPDATE first appointment to second slot, bay, technician, restore status, version = version + 1
     alt No overlap with adjacent appointments
         API->>DB: INSERT 2 appointment_events (audit trail)
-        API->>DB: SELECT pg_notify('appointment_events', ...) for both appointments
-        API->>DB: COMMIT (releases advisory lock; broadcasts SSE events)
-        API-->>Staff: 200 OK {first_appointment, second_appointment}
-    else Longer service duration collides with a 3rd appointment (SQLSTATE 23P01)
+        API->>DB: Broadcast pg_notify for both appointments
+        API->>DB: COMMIT (releases advisory lock and broadcasts SSE events)
+        API-->>Staff: 200 OK (returns both updated appointments)
+    else Longer service duration collides with a third appointment (SQLSTATE 23P01)
         API->>DB: ROLLBACK
-        API-->>Staff: 409 SLOT_SWAP_CONFLICT (details which resource/interval collided)
+        API-->>Staff: 409 SLOT_SWAP_CONFLICT (details which resource collided)
     end
 ```
 
@@ -893,33 +696,33 @@ To ensure that appointments created or modified by a customer appear in real tim
 ```mermaid
 sequenceDiagram
     autonumber
-    actor C as "Customer Screen (/demo/customer)"
-    participant API as "apps/scheduler-api (@Sse Controller)"
-    participant DB as "PostgreSQL 18 (LISTEN/NOTIFY)"
-    participant Worker as "apps/scheduler-worker (Expire Cron)"
-    actor D as "Dealership & Technician Board (/demo/dealership)"
+    actor C as Customer Screen
+    participant API as Scheduler API (SSE Controller)
+    participant DB as PostgreSQL 18 (LISTEN and NOTIFY)
+    participant Worker as Scheduler Worker (Expire Cron)
+    actor D as Dealership and Technician Board
 
     Note over API,DB: API maintains dedicated LISTEN appointment_events connection
     C->>API: GET /v1/appointments/stream (SSE subscribed for customer_id)
-    D->>API: GET /v1/staff/appointments/stream?technician_id= (SSE subscribed for dealership_id)
+    D->>API: GET /v1/staff/appointments/stream (SSE subscribed for dealership_id)
     
     rect rgb(240, 248, 255)
     Note over C,DB: Booking Flow with Transactional NOTIFY
     C->>API: POST /v1/appointments
-    API->>DB: BEGIN → Acquire Locks → Insert Appointment & Event → SELECT pg_notify('appointment_events', payload) → COMMIT
+    API->>DB: BEGIN then Acquire Locks then Insert Appointment and Event then pg_notify then COMMIT
     DB-->>API: NOTIFY delivered only after COMMIT
-    API->>API: StreamService parses event, routes to RxJS Subject
-    API-->>D: SSE Event: APPOINTMENT_CREATED (Board updates instantly)
-    API-->>C: SSE Event: APPOINTMENT_CREATED (Customer screen updates instantly)
+    API->>API: StreamService parses event and routes to RxJS Subject
+    API-->>D: SSE Event APPOINTMENT_CREATED (Board updates instantly)
+    API-->>C: SSE Event APPOINTMENT_CREATED (Customer screen updates instantly)
     end
 
     rect rgb(255, 245, 238)
     Note over Worker,DB: Worker Expire Job (Cross-Process SSE Sync)
-    Worker->>DB: BEGIN → Expire PENDING → SELECT pg_notify('appointment_events', payload) → COMMIT
+    Worker->>DB: BEGIN then Expire PENDING then SELECT pg_notify then COMMIT
     DB-->>API: NOTIFY delivered to API listener connection across process boundary
     API->>API: StreamService forwards to RxJS Subject
-    API-->>D: SSE Event: APPOINTMENT_EXPIRED (Board removes expired booking)
-    API-->>C: SSE Event: APPOINTMENT_EXPIRED (Customer sees EXPIRED status)
+    API-->>D: SSE Event APPOINTMENT_EXPIRED (Board removes expired booking)
+    API-->>C: SSE Event APPOINTMENT_EXPIRED (Customer sees EXPIRED status)
     end
 ```
 
@@ -1040,7 +843,7 @@ Implemented once in `@app/common` via `ResponseEnvelopeInterceptor` (for 2xx res
 | GET | `/v1/me/vehicles` | Customer | List customer vehicles (supports pagination & filters) |
 | GET | `/v1/dealerships` | Customer, Staff | List dealerships (offset/cursor paginated, filter by `code`, `name`, Redis cached) |
 | GET | `/v1/service-types` | Customer, Staff | List service catalog (offset/cursor paginated, filter by `code`, `name`, Redis cached) |
-| GET | `/v1/dealerships/{id}/availability?date=&service_type_ids=` | Customer | Query consolidated slot availability grid for one or multiple services |
+| GET | `/v1/appointments/availability?dealership_id=&date=&service_type_ids=` | Customer | Query consolidated slot availability grid for one or multiple services |
 | GET | `/v1/dealerships/{id}/technicians?service_type_ids=&start_at=` | Customer | List free qualified technicians for given services and slot |
 | POST | `/v1/appointments` (`Idempotency-Key`) | Customer | Create appointment with single/multiple `serviceTypeIds`, serialized under dealership advisory lock |
 | GET | `/v1/appointments` | Customer | List customer appointments (paginated, filter by `status`, `date`) |
@@ -1069,43 +872,40 @@ Implemented once in `@app/common` via `ResponseEnvelopeInterceptor` (for 2xx res
 
 ---
 
-## 10. Security — Authentication via (Mock) OIDC SSO
+## 10. Security — Authentication & Authorization via SSO Mockup
 
-Authentication is **fully delegated to an SSO identity provider**; the business API is a pure *resource server*. A **minimal mock OIDC provider** (`@app/sso-mock`) emulates the standard contract. There is **one SSO issuer for the whole system**; customers and staff sign in with email/password.
+> **Implementation Status Note:** Full production-grade SSO IdP integration (e.g., Keycloak / Okta via Authorization Code Flow + PKCE) is currently work-in-progress (WIP). In the current runtime, authentication and authorization are verified using a lightweight **SSO Mockup module** (`v1/auth/token`).
 
-| Concern | MVP design |
-| :--- | :--- |
-| Client registration | `sso_clients`: `client_id`, hashed `client_secret`, audience (e.g. `scheduler-web` → `aud = scheduler-api`). |
-| Signing keys | RSA key pair generated by `npm run sso:keys`; private key in `storage/sso` (git-ignored); public key published as JWKS with `kid`. |
-| Discovery | `GET /.well-known/openid-configuration` (static JSON: `issuer`, `token_endpoint`, `jwks_uri`, algorithms). |
-| Token endpoint | `POST /oauth/token` with `client_id`, `client_secret`, `grant_type = password`, `username`, `password` → `access_token` (JWT **RS256**, 15 min, signed via `jose`) with claims `iss, aud, sub, exp, iat, jti, actor_type, roles, tenant_id, dealership_id`. Password grant is a **mock convenience**; a real IdP would use Authorization Code + PKCE. |
-| Verification (`OidcJwtAuthGuard` in `@app/common`) | Uses `jose` (`createRemoteJWKSet` / cached JWKS) to verify signature (strict `exp` check, zero clock leeway), `iss`, `aud`; populates `ActorContext` in `AsyncLocalStorage`. Never queries SSO tables. |
-| Login bypass | `npm run sso:issue-token -- <email>`; the database seeder prints ready-to-use tokens for sample customers and staff (README / Swagger UI). |
-| Deferred | Refresh-token rotation, `userinfo`, `client_credentials`. |
-| Real IdP later | Disable the mock (`SSO_MOCK_ENABLED=false`); set `SSO_ISSUER`, `SSO_JWKS_URI`, `SSO_AUDIENCE`; custom claims via IdP claim mappers. No business code change. |
-| Authorization | Guards + repository dealership scopes: customers see only their own appointments; staff only their dealership's; cross-dealership access returns 404. |
+### 10.1 Authentication via SSO Mockup
+- **Token Generation (`POST /v1/auth/token` & `GET /v1/auth/token`):** Emulates an OIDC token endpoint by generating valid RS256 JWT Bearer tokens containing standard actor claims (`sub`, `roles`, `tenant_id`, `dealership_id`, `exp`). Seeded tokens for sample customer (`Nguyen Van A`) and staff member (`Tran Thi Staff`) are provided out of the box for testing in Swagger UI, Postman, and cURL.
+
+### 10.2 Authorization & Domain Boundaries
+- **Customer Ownership (Zero-Trust IDOR Protection):** Customers are strictly restricted to their own account and registered vehicles. A customer cannot access, edit, or cancel another customer's appointments (`customer_id` matching). Unauthorized access attempts return a uniform HTTP `404 Not Found` to prevent resource enumeration.
+- **Staff Dealership Scoping:** Staff members are bound to their assigned `dealership_id`. Staff can only view and execute lifecycle actions (approve, check-in, complete, reschedule, swap) on appointments belonging to their own dealership.
 
 ---
 
 ## 11. Observability
 
-### 11.1 Structured logging (Pino JSON to stdout + `AsyncLocalStorage`)
-- **`AsyncLocalStorage` Request Context (`node:async_hooks`):** Because Node.js processes concurrent requests on a single event loop, `CorrelationIdMiddleware` initializes an `AsyncLocalStorage` store containing `{ correlationId, actorSub, actorType, tenantId, dealershipId }` for each incoming request. Pino's `mixin` hook automatically injects `correlation_id` into **every log line** emitted during that request, and `correlation_id` is returned in `X-Correlation-ID` and `meta.correlation_id`.
-- **Request boundary logs** written by `LoggingInterceptor` (using Pino's built-in ISO timestamp):
+### 11.1 Structured logging (JSON stdout + `AsyncLocalStorage`)
+- **`AsyncLocalStorage` Request Context (`node:async_hooks`):** Because Node.js processes concurrent requests on a single event loop, `CorrelationIdMiddleware` initializes an `AsyncLocalStorage` store containing `{ correlationId, actorSub, actorType, tenantId, dealershipId }` for each incoming request. The logger automatically injects `correlation_id` into **every log line** emitted during that request, and `correlation_id` is returned in `X-Correlation-ID` and `meta.correlation_id`.
+- **Request boundary logs** written by `LoggingInterceptor`:
   - `event = REQUEST_START`: method, route, `user_id` (`sub`), `actor_type`, platform (`X-Client-Platform`), masked request payload.
   - `event = REQUEST_END`: HTTP status, `errorCode`, `duration_ms`, heap memory usage, **full response body for both success and error** (masked), exception (class, message, file, line, top stack frames) if any.
 - **Zero-boilerplate Span logs via `@LogSpan()` TypeScript Decorator:** Decorating key UseCase / Service methods (`@LogSpan()`) automatically logs a minimal span entry (`class`, `function`, `input`, `output`) with the active `correlation_id` from `AsyncLocalStorage`.
-- **Sensitive-data masking** (Pino redaction + custom serializer) applied to request, response and span payloads: `password`, `client_secret`, `access_token`, `authorization`, `email`, `phone`, VIN (partial), and snapshot fields such as `customer_name`.
+- **Sensitive-data masking** applied to request, response and span payloads: `password`, `client_secret`, `access_token`, `authorization`, `email`, `phone`, VIN (partial), and snapshot fields such as `customer_name`.
 - **Volume control:** `info` level in production; span logs can be sampled. Response logging is complete by default; an optional `LOG_RESPONSE_MAX_BYTES` env variable allows a cap per environment if storage cost requires it.
 
-### 11.2 Metrics (Prometheus / OpenTelemetry-ready)
-- RED metrics: `http_requests_total{route,status}`, `http_request_duration_seconds{route}`.
-- Business: `booking_attempts_total{dealership, outcome=created|no_bay|no_technician|limit}`, `appointments_expired_total`, `appointment_transitions_total{to_status}`, `appointment_swaps_total`.
-- Database: advisory lock wait time, lock timeouts, `pg` connection pool utilization.
+### 11.2 Metrics (Prometheus / OpenTelemetry Roadmap — Dự định triển khai)
 
-### 11.3 Tracing & health
-- Correlation ID now; W3C `traceparent` propagation and OpenTelemetry SDK export when services are extracted.
-- `/health/live` (process up) and `/health/ready` (`@nestjs/terminus` checking PostgreSQL connection and JWKS / signing keys loaded).
+> Note: Prometheus and OpenTelemetry are planned for a future release. The metrics below represent the planned specification, ready for use when the monitoring infrastructure is in place.
+- **RED Metrics (Target Spec):** `http_requests_total{route,status}`, `http_request_duration_seconds{route}`.
+- **Business Scheduling Metrics:** `booking_attempts_total{dealership, outcome=created|no_bay|no_technician|limit}`, `appointments_expired_total`, `appointment_transitions_total{to_status}`, `appointment_swaps_total`.
+- **Database & Concurrency Metrics:** advisory lock wait time, lock timeouts, `pg` connection pool utilization.
+
+### 11.3 Tracing & Health Probes
+- **Correlation ID (Current):** Request-scoped tracking via `X-Correlation-ID` header and log metadata. W3C `traceparent` propagation and OpenTelemetry SDK export are slated for the multi-service extraction phase.
+- **Health Endpoints (Active):** `/health/live` (process liveness) and `/health/ready` (`@nestjs/terminus` verifying PostgreSQL database and Redis connectivity).
 
 ---
 
@@ -1137,8 +937,6 @@ Authentication is **fully delegated to an SSO identity provider**; the business 
 | **Node.js 22+ LTS & TypeScript 5+** | Strict static typing for DTOs/Contracts, native `AsyncLocalStorage`, non-blocking I/O, effortless concurrency testing via `Promise.all`. | Event-loop requires `AsyncLocalStorage` for request context and strict `EntityManager` transaction pinning. |
 | **NestJS Monorepo (`apps/` + `libs/`)** | Native separation between deployable units (`apps/scheduler-api`, `apps/scheduler-worker`) and domain libraries (`libs/*`); TypeScript decorators (`@LogSpan()`), Interceptors, Guards, and DI tokens map cleanly to DMS modules. | Slightly more initial TypeScript configuration (`tsconfig.json` paths, `nest-cli.json`). |
 | **TypeORM + PostgreSQL 18** | Explicit `dataSource.transaction(manager => ...)` control for `pg_advisory_xact_lock`, `tstzrange` + `btree_gist` exclusion constraints, `EntitySubscriber` for audit columns. | Complex availability queries (`generate_series`) are written as parameterized SQL via `manager.query()`. |
-| **Pino (`nestjs-pino`)** | Ultra-low-overhead structured JSON logger with built-in redaction and `AsyncLocalStorage` mixin support. | — |
-| **Minimal mock OIDC (`jose`)** | Standards-compliant RS256 JWT signing and JWKS verification using Web Crypto APIs with zero native C++ dependencies. | Password grant only in the mock. |
 | **Docker Compose** | One-command startup (`docker compose up -d`), environment parity (`ENV TZ=UTC` + `tzdata`). | — |
 | **`@nestjs/swagger`** | Auto-generates OpenAPI 3.0 spec and interactive Swagger UI (`/docs/api`) directly from TypeScript DTOs. | — |
 
@@ -1146,24 +944,8 @@ Authentication is **fully delegated to an SSO identity provider**; the business 
 
 ## 15. GenAI Collaboration in the Design Phase
 
-Google Antigravity was used as a design partner; the design was also reviewed independently and refined through multi-agent architectural sessions. Key iterations:
+Google Antigravity was leveraged as an interactive design partner and technical sounding board throughout the architecture phase. Rather than accepting raw autonomous AI generation, every architectural proposal was systematically critiqued, stress-tested against real-world dealership operations, and refined through structured multi-agent review sessions (Lead Architect, Developer, QA, and Adversarial Reviewer).
 
-| # | First proposal | Critique / correction | Outcome |
-| :--- | :--- | :--- | :--- |
-| 1 | AI design covered only the customer booking request. | I pointed out the implicit actors (staff, technicians, bays) and wrote my own assumptions. | Actor model, staff flow, explicit scope table. |
-| 2 | — | AI flagged contradictions in my assumptions: approval-time allocation breaks the real-time requirement; "any technician" drops "qualified technician". | Reserve at booking time; minimal skill model. |
-| 3 | Initial framework exploration. | Evaluated modular monolith boundaries vs physical microservices. | Modular monolith now; phased extraction path documented. |
-| 4 | AI: separate Dealership / Scheduling services with a local projection. | I proposed DMS-aligned modules. | Bays, technicians, appointments in Workshop — one transaction, no projection. |
-| 5 | AI: RFC 7807 errors. | Team-wide envelope `{statusCode, errorCode, data, message, meta}`. | `ResponseEnvelopeInterceptor` + `GlobalExceptionFilter` in `@app/common`. |
-| 6 | AI: framework-coupled auth. | I required full SSO delegation with an OIDC client_id / client_secret / public-key contract. | Mock OIDC (`@app/sso-mock`) + `jose` JWKS verification. |
-| 7 | My initial choice: hard delete. | AI showed soft cancel frees the slot and keeps audit history. | Soft cancel. |
-| 8 | AI: verbose logging with extra fields, response bodies only on errors. | I required start/end markers, framework timestamps, minimal spans, correlation ID on every line, and **full responses for success and error**. | `LoggingInterceptor` + Pino + `AsyncLocalStorage` + `@LogSpan()` decorator. |
-| 9 | AI: `FOR UPDATE SKIP LOCKED` on bay / technician rows. | **Design review** showed row locks are not time-scoped → false `409` under load. | Per-dealership advisory lock + exclusion constraints; dedicated regression test. |
-| 10 | Booking rules on `dealerships`; cross-module reads; approval always required; PENDING could hold slots forever; "any technician". | Review + my decisions. | `workshop_settings` in `@app/workshop`, display snapshots, `@app/contracts` + boundary lint rules, `requires_approval` (auto-confirm default), expiry worker job + active limit, best-fit technician, `end_at ≤ closing`, idempotency race fix. |
-| 11 | Vehicle not editable; technician only system-assigned. | I required customers and staff to be able to change vehicle / technician when free, plus full audit columns. | Edit / reassign flows, snapshot refresh, `created_by / updated_by / cancelled_by` via TypeORM subscriber. |
-| 12 | Review suggested merging CRM and Organization into a single "Master Data Service". | With the Architect agent, we evaluated DMS domain boundaries: merging Customer/Vehicle (high-growth PII & asset lifecycle) with Tenant/Dealership (low-churn org directory) in code creates a "God Master Data" anti-pattern. | Kept `@app/crm` and `@app/organization` logically separate in `libs/`, while co-deploying them in `apps/core-service` during Stage 2 extraction. |
-| 13 | Arbitrary `duration_minutes` on `ServiceType` + `15 min` buffer (e.g. `60 + 15 = 75 min`). | In multi-agent discussion (Business Analyst + Architect), we identified that non-grid-aligned occupied durations create **slot fragmentation (dead time)** on a 30-minute grid. | Enforced **Slot-Grid Alignment** (`(duration_minutes + buffer_minutes) % slot_minutes == 0`) so every booking aligns with the 30-minute grid. |
-| 14 | Early completion & early customer arrival (e.g. Customer 2 booked at `10:00` arrives at `08:00` while Customer 1 booked at `08:00` has not yet arrived). | I asked how to handle early completion, early arrival, and slot swapping without causing domino conflicts or overlooking bay exhaustion when switching technicians. | Designed a 3-scenario operational rule (checking **both** Bay and Technician in Scenario A) and `POST /v1/staff/appointments/swap` with a 3-step `SWAPPING` transition inside the dealership advisory lock. |
-| 15 | Switching stack from PHP Laravel (Apiato) to **NestJS Monorepo (`apps/` + `libs/`)**. | Evaluated Node.js event-loop & connection-pool differences when migrating the design to NestJS. | Introduced `AsyncLocalStorage` for request/audit context isolation, strict transactional `EntityManager` connection pinning for `pg_advisory_xact_lock`, `@LogSpan()` decorator, and a dedicated single-replica `apps/scheduler-worker` for cron jobs. |
-| 16 | Design covered real-time availability check on booking, but lacked real-time live push to Dealership, Technician, and Customer screens after booking/updates. | I asked how new appointments and status updates are displayed in real time to Dealership, Technician, and Customer views, and selected the leanest NestJS solution. | Added Post-Commit RxJS `Subject` + NestJS `@Sse()` streams (`GET /v1/appointments/stream` for Customer and `GET /v1/staff/appointments/stream?technician_id=` for Dealership & Technician) plus two lightweight live demo screens (`/demo`) showcasing instant two-way real-time synchronization. |
-| 17 | Adversarial concurrency review identified cross-dealership active-limit race (Case 6), advisory lock parameter typing (`bigint` vs `int4`), idempotency crash recovery (Case 11), worker/multi-pod SSE isolation (Case 12), connection pool sizing (Case 13), and missing staff reschedule endpoint. | Validated all findings in multi-agent review session (Architect + Dev). | Implemented customer advisory lock hierarchy (`customer -> dealership -> row`), `int4` casts, 60s lease + atomic transaction update for idempotency, PostgreSQL `LISTEN / NOTIFY` delivered upon `COMMIT` with monotonic event `version` ordering, explicit pool sizing (`max: 25`), staff `reschedule` endpoint for early arrival, replicated `timezone` in `workshop_settings`, and documented strict Lock and Version Invariants. |
+The complete 17-step iterative dialogue—tracing initial proposals, human critique, and final engineering outcomes across actor modeling, approval-time allocation elimination, slot-grid alignment, 3-scenario early arrival, and concurrency lock hierarchies—has been extracted into a dedicated architectural companion document:
+
+👉 **Read the full narrative & design iterations:** [`docs/GENAI_DESIGN_COLLABORATION.md`](./docs/GENAI_DESIGN_COLLABORATION.md)
