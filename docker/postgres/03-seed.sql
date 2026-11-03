@@ -108,6 +108,9 @@ ON CONFLICT DO NOTHING;
 -- 6. Sample Customer & Registered Vehicles
 INSERT INTO customers (id, tenant_id, identity_subject, code, name, email, phone)
 VALUES (1, 1, 'a1111111-1111-1111-1111-111111111111', 'CUST_001', 'Nguyen Van A', 'customer1@example.com', '+84901234567')
+VALUES (2, 1, 'c3333333-3333-3333-3333-333333333333', 'CUST_002', 'Nguyen Van C', 'customer2@example.com', '+84901234568')
+VALUES (3, 1, 'd4444444-4444-4444-4444-444444444444', 'CUST_003', 'Nguyen Van D', 'customer3@example.com', '+84901234569')
+
 ON CONFLICT DO NOTHING;
 
 SELECT setval('customers_id_seq', (SELECT MAX(id) FROM customers));
@@ -115,7 +118,11 @@ SELECT setval('customers_id_seq', (SELECT MAX(id) FROM customers));
 INSERT INTO vehicles (id, tenant_id, customer_id, vin, license_plate, make, model, year)
 VALUES 
 (1, 1, 1, '1HGCR2F83HA000001', '51A-123.45', 'Honda', 'Accord', 2020),
-(2, 1, 1, '1HGCR2F83HA000002', '51B-678.90', 'Toyota', 'Camry', 2022)
+(2, 1, 1, '1HGCR2F83HA000002', '51B-678.90', 'Toyota', 'Camry', 2022),
+(3, 1, 2, '1HGCR2F83HA000003', '51C-123.45', 'Honda', 'Civic', 2021),
+(4, 1, 2, '1HGCR2F83HA000004', '51D-675.99', 'Toyota', 'Corolla', 2022),
+(5, 1, 3, '1HGCR2F83HA000005', '51B-671.95', 'Toyota', 'Camry', 2023)
+
 ON CONFLICT DO NOTHING;
 
 SELECT setval('vehicles_id_seq', (SELECT MAX(id) FROM vehicles));
@@ -123,6 +130,8 @@ SELECT setval('vehicles_id_seq', (SELECT MAX(id) FROM vehicles));
 -- 7. Dealership Staff
 INSERT INTO staff_members (id, tenant_id, dealership_id, identity_subject, name)
 VALUES (1, 1, 1, 'b2222222-2222-2222-2222-222222222222', 'Tran Thi Staff')
+VALUES (2, 1, 1, 'c3333333-3333-3333-3333-333333333333', 'Tran Thi Staff2')
+
 ON CONFLICT DO NOTHING;
 
 SELECT setval('staff_members_id_seq', (SELECT MAX(id) FROM staff_members));

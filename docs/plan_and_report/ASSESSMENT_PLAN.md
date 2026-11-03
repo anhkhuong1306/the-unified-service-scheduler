@@ -100,8 +100,8 @@
 - [x] **6.1. Tích hợp `@nestjs/swagger` (`/docs/api`), 2 Màn hình Live SSE Demo (`/demo` cho Customer & Dealership/Technician) & `@nestjs/terminus` Health Checks (`/health/live`, `/health/ready`).**
 - [x] **6.2. Viết `source/README.md` kèm bộ `cURL` mẫu và mục AI Collaboration Narrative (17 vòng phản biện).**
 - [x] **6.3. Bộ QA Test Matrices (Excel) & Executable Postman Collections (`docs/test/`):**
-  - Xây dựng 2 file Excel test matrix chuẩn 2 sheet (Spec & Live Docker Execution Evidence): `Core_Basic_Business_Logic_TestCases.xlsx` (18 TC P0) và `Unified_Service_Scheduler_TestCases.xlsx` (47+ TC toàn diện).
-  - Xây dựng 2 runnable Postman collection tự động assertion và chain dynamic variables: `Core_Basic_Business_Logic.postman_collection.json` và `Unified_Service_Scheduler_Master.postman_collection.json`.
+  - Xây dựng file Excel test matrix chuẩn 2 sheet (Spec & Live Docker Execution Evidence): `The Unified Service Scheduler — Comprehensive Master API TestCases.xlsx` (28 TC bao phủ toàn bộ 8 module hệ thống).
+  - Đồng bộ runnable Postman collection tự động assertion và dynamic variable chaining: `The Unified Service Scheduler — Comprehensive Master API Collection (All Endpoints).postman_collection.json`.
 
 ---
 
