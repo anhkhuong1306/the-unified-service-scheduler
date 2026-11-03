@@ -24,8 +24,6 @@
   - [8.1 Test Artifacts Overview (`docs/test/`)](#81-test-artifacts-overview-docstest)
   - [8.2 Structure & Interpretation of Excel Test Matrices](#82-structure--interpretation-of-excel-test-matrices)
   - [8.3 Postman Collection Setup & Execution Flow](#83-postman-collection-setup--execution-flow)
-  - [8.4 Automated CLI Execution via Newman](#84-automated-cli-execution-via-newman)
-
 ---
 
 ## 1. Architectural Overview
@@ -356,22 +354,3 @@ When running collections manually or via the Postman Collection Runner, execute 
    - Run Atomic Slot Swap (`POST /v1/staff/appointments/swap`) to test zero-cascade slot exchanges.
 
 ---
-
-### 8.4 Automated CLI Execution via Newman
-
-You can execute the entire test suite directly from your terminal using **Newman** (Postman's CLI runner) without opening the Postman GUI:
-
-```bash
-# 1. Install Newman (if not already installed)
-npm install -g newman
-
-# 2. Run the Core Basic Business Logic Suite
-npx newman run docs/test/Core_Basic_Business_Logic.postman_collection.json \
-  --env-var "baseUrl=http://localhost:3000" \
-  --reporters cli
-
-# 3. Run the Unified Master Suite
-npx newman run docs/test/Unified_Service_Scheduler_Master.postman_collection.json \
-  --env-var "baseUrl=http://localhost:3000" \
-  --reporters cli
-```
