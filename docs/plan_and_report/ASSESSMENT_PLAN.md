@@ -106,6 +106,5 @@
 ---
 
 ### 🎬 Ngày 7: Rà soát Cuối cùng & Quay Video Presentation (ĐANG TIẾN HÀNH / SẴN SÀNG)
-- [x] **7.1. Soạn thảo Kịch bản Video Presentation chi tiết:** Hoàn thành [`docs/VIDEO_SUBMISSION_SCRIPT.md`](../VIDEO_SUBMISSION_SCRIPT.md) với cấu trúc 5 phần, phân bổ thời lượng 5–10 phút, checklist kịch bản demo live màn hình và Q&A.
-- [ ] **7.2. Chạy thử toàn bộ từ trạng thái sạch (`docker compose down -v && docker compose up -d` & `./scripts/db.sh reset`).**
-- [ ] **7.3. Quay Video 5–10 phút theo kịch bản và nộp bài.**
+- [ ] **7.1. Chạy thử toàn bộ từ trạng thái sạch (`docker compose down -v && docker compose up -d` & `./scripts/db.sh reset`).**
+- [ ] **7.2. Quay Video 5–10 phút theo kịch bản và nộp bài.**
