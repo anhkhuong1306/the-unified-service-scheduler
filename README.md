@@ -207,10 +207,8 @@ All core architectural specifications, daily assessment plans, sprint stories, a
 | **Assessment Plan** | [`docs/plan_and_report/ASSESSMENT_PLAN.md`](./docs/plan_and_report/ASSESSMENT_PLAN.md) | Daily roadmap, milestone decomposition, and phased delivery scope. |
 | **Daily Execution Report** | [`docs/plan_and_report/DAILY_REPORT.md`](./docs/plan_and_report/DAILY_REPORT.md) | Daily execution logs, bugs resolved, and rule updates across AI sessions. |
 | **User Stories & Specs** | [`docs/stories/`](./docs/stories/) | Granular sprint stories with acceptance criteria, domain mapping, and QA test specs. |
-| **QA Test Cases Matrix (Full)** | [`docs/test/Unified_Service_Scheduler_TestCases.xlsx`](./docs/test/Unified_Service_Scheduler_TestCases.xlsx) | Comprehensive Excel test matrix covering all positive, negative, and concurrency test cases across all modules. |
-| **Core Basic Business Logic Test Suite** | [`docs/test/Core_Basic_Business_Logic_TestCases.xlsx`](./docs/test/Core_Basic_Business_Logic_TestCases.xlsx) | Dedicated Excel test suite validating P0 core business logic (Availability 30m/15m grid, PG Advisory Lock concurrency, GiST exclusion constraints, technician skills & dispatching, Idempotency replay, cancellation cutoffs, and multi-service aggregation). |
-| **Master Postman Collection** | [`docs/test/Unified_Service_Scheduler_Master.postman_collection.json`](./docs/test/Unified_Service_Scheduler_Master.postman_collection.json) | Complete runnable API test collection for all endpoints and auth roles. |
-| **Core Basic Postman Collection** | [`docs/test/Core_Basic_Business_Logic.postman_collection.json`](./docs/test/Core_Basic_Business_Logic.postman_collection.json) | Dedicated runnable API test collection mapped 1-to-1 with the Core Basic Test Suite (`TC_CORE_001` - `TC_CORE_018`) with automated test assertions and dynamic variable chaining. |
+| **Comprehensive Master QA Test Cases (Excel)** | [`docs/test/The Unified Service Scheduler — Comprehensive Master API TestCases.xlsx`](./docs/test/The%20Unified%20Service%20Scheduler%20%E2%80%94%20Comprehensive%20Master%20API%20TestCases.xlsx) | Standardized 2-sheet QA test matrix (Specification & Live Docker Execution Evidence) covering all 28 API test cases across 8 functional modules. |
+| **Comprehensive Master Postman Collection** | [`docs/test/The Unified Service Scheduler — Comprehensive Master API Collection (All Endpoints).postman_collection.json`](./docs/test/The%20Unified%20Service%20Scheduler%20%E2%80%94%20Comprehensive%20Master%20API%20Collection%20(All%20Endpoints).postman_collection.json) | Complete runnable API test collection covering all 28 endpoints with automated assertion scripts and environment variable chaining. |
 
 ---
 
@@ -253,8 +251,8 @@ For each day's milestone, the agent ingested `SYSTEM_DESIGN.md` and `ASSESSMENT_
 During coding, the developer agent operated strictly within the boundaries of the approved story and system design. Prior to making file modifications, the agent was required to declare its planned implementation steps for my approval. I reviewed code diffs line-by-line to verify domain encapsulation.
 #### 4. Comprehensive QA & Live Testing
 Following implementation, quality assurance was executed through the structured:
-- **Structured Test Case Catalog:** The agent generated and updated a comprehensive Excel test case matrix ([`docs/test/Unified_Service_Scheduler_TestCases.xlsx`](./docs/test/Unified_Service_Scheduler_TestCases.xlsx)) alongside a dedicated Core Business Logic Test Suite ([`docs/test/Core_Basic_Business_Logic_TestCases.xlsx`](./docs/test/Core_Basic_Business_Logic_TestCases.xlsx)), which I reviewed against the story's acceptance criteria.
-- **Master API Collections:** The agent maintained synchronized Postman collections—including the complete Master collection ([`docs/test/Unified_Service_Scheduler_Master.postman_collection.json`](./docs/test/Unified_Service_Scheduler_Master.postman_collection.json)) and the dedicated Core Basic collection ([`docs/test/Core_Basic_Business_Logic.postman_collection.json`](./docs/test/Core_Basic_Business_Logic.postman_collection.json))—covering positive flows, negative validations, edge cases, and concurrency races.
+- **Structured Test Case Catalog:** The agent generated and updated a comprehensive Excel test case matrix ([`docs/test/The Unified Service Scheduler — Comprehensive Master API TestCases.xlsx`](./docs/test/The%20Unified%20Service%20Scheduler%20%E2%80%94%20Comprehensive%20Master%20API%20TestCases.xlsx)), which I reviewed against the story's acceptance criteria and system specifications.
+- **Master API Collection:** The agent maintained a synchronized Master Postman collection ([`docs/test/The Unified Service Scheduler — Comprehensive Master API Collection (All Endpoints).postman_collection.json`](./docs/test/The%20Unified%20Service%20Scheduler%20%E2%80%94%20Comprehensive%20Master%20API%20Collection%20(All%20Endpoints).postman_collection.json)) covering all 28 API endpoints across positive flows, negative validations, edge cases, lifecycle transitions, and real-time event streams.
 - **Automated Test Execution:** Automated Jest suites (unit tests, repository tests, concurrency tests with `Promise.all`) were executed, ensuring clean compilation and zero app crashes.
 - **Personal Live-Environment Verification:** In addition to automated agent runs, I launched the system in a clean local Docker environment, personally executed live API requests via cURL and Postman, inspected database states, and verified response payloads. Whenever an anomaly occurred, I captured screenshots into the test evidence, documented root causes, instructed the agent to implement targeted fixes, and re-verified the fix through the same pipeline.
 
@@ -277,30 +275,28 @@ All structured test specifications, executable Postman API collections, and veri
 
 | Test Suite / Artifact | Location | Purpose & Scope |
 | :--- | :--- | :--- |
-| **Core Basic Business Logic Suite (Excel)** | [`docs/test/Core_Basic_Business_Logic_TestCases.xlsx`](./docs/test/Core_Basic_Business_Logic_TestCases.xlsx) | Dedicated 18 P0 business logic test cases (`TC_CORE_001` - `TC_CORE_018`). Validates 30m grid/15m buffer, multi-service aggregation, technician skill dispatching, PostgreSQL advisory lock serialization, GiST exclusion double-booking prevention, idempotency replay, lead-time cutoffs, and active booking quotas. |
-| **Core Basic Business Logic Collection (Postman)** | [`docs/test/Core_Basic_Business_Logic.postman_collection.json`](./docs/test/Core_Basic_Business_Logic.postman_collection.json) | Runnable Postman collection mapped 1-to-1 with the Core Basic Excel matrix, complete with automated Chai assertions and dynamic environment variable chaining. |
-| **Unified Master Test Matrix (Excel)** | [`docs/test/Unified_Service_Scheduler_TestCases.xlsx`](./docs/test/Unified_Service_Scheduler_TestCases.xlsx) | Complete QA test catalog spanning 47+ test cases across all modules: Organization, CRM, Workshop Settings, Service Catalog, Resource Management, Lifecycle Transitions, Early-Arrival Rescheduling, and Atomic Slot Swaps. |
-| **Unified Master Collection (Postman)** | [`docs/test/Unified_Service_Scheduler_Master.postman_collection.json`](./docs/test/Unified_Service_Scheduler_Master.postman_collection.json) | Comprehensive runnable Postman collection for the entire platform across Customer and Staff roles, including SSE streaming and Redis caching endpoints. |
+| **Comprehensive Master QA Test Cases (Excel)** | [`docs/test/The Unified Service Scheduler — Comprehensive Master API TestCases.xlsx`](./docs/test/The%20Unified%20Service%20Scheduler%20%E2%80%94%20Comprehensive%20Master%20API%20TestCases.xlsx) | Standardized 2-sheet QA test matrix (Specification & Live Docker Execution Evidence) covering 28 test cases (`TC_MST_001` - `TC_MST_028`) across 8 modules: Auth, Health, Dealerships, Catalog, CRM, Customer Booking, Staff Lifecycle Operations, and Real-Time SSE Streams. |
+| **Comprehensive Master Postman Collection** | [`docs/test/The Unified Service Scheduler — Comprehensive Master API Collection (All Endpoints).postman_collection.json`](./docs/test/The%20Unified%20Service%20Scheduler%20%E2%80%94%20Comprehensive%20Master%20API%20Collection%20(All%20Endpoints).postman_collection.json) | Complete runnable API test collection covering all 28 endpoints with automated Chai test assertion scripts and dynamic environment variable chaining (`bearer_token`, `appointmentId`, `targetDate`). |
 
 ---
 
-### 8.2 Structure & Interpretation of Excel Test Matrices
+### 8.2 Structure & Interpretation of Excel Test Matrix
 
-Both Excel workbooks ([`Core_Basic_Business_Logic_TestCases.xlsx`](./docs/test/Core_Basic_Business_Logic_TestCases.xlsx) and [`Unified_Service_Scheduler_TestCases.xlsx`](./docs/test/Unified_Service_Scheduler_TestCases.xlsx)) share a standardized, audit-ready 2-sheet structure:
+The Excel workbook ([`The Unified Service Scheduler — Comprehensive Master API TestCases.xlsx`](./docs/test/The%20Unified%20Service%20Scheduler%20%E2%80%94%20Comprehensive%20Master%20API%20TestCases.xlsx)) adheres to an audit-ready 2-sheet structure:
 
-1. **Sheet 1: `Test Cases` (Specification Sheet):**
-   - **Test Case ID:** e.g., `TC_CORE_001`, `TC_SCHED_006`.
-   - **Category / Domain:** Functional, Concurrency, Constraint, Idempotency, or Lifecycle.
-   - **Test Objective & Description:** Specific business rule or boundary condition under test.
-   - **Preconditions:** Necessary system state (e.g., seed data present, specific technician skill assigned, active booking exists).
+1. **Sheet 1: `Test Cases` (Specification Sheet — 14 Columns):**
+   - **Test Case ID:** e.g., `TC_MST_001`, `TC_MST_013`, `TC_MST_026`.
+   - **Category / Domain:** Authentication, Health, Dealerships, Service Catalog, CRM, Appointments, Staff Operations, Real-Time Streams.
+   - **Test Objective & Description:** Specific business rule, concurrency guard, or boundary condition under test.
+   - **Preconditions:** Necessary system state (e.g., database seeded, specific technician skills assigned, active booking exists).
    - **Step-by-Step Actions:** Exact API calls and query parameters to execute.
-   - **Test Data / Payload:** JSON request body, HTTP headers (e.g., `Idempotency-Key`), and URL parameters.
-   - **Expected Result:** HTTP status code (200, 201, 400, 409, 422), business error code (`SLOT_UNAVAILABLE`, `IDEMPOTENCY_KEY_REUSED`), and required response payload structure.
+   - **Test Data / Payload:** JSON request body, HTTP headers (e.g., `Idempotency-Key`, `Authorization`), and URL parameters.
+   - **Expected Result:** HTTP status code (200, 201, 400, 409), business error code, and required response payload structure.
    - **Priority:** `P0 (Critical / Blocker)` vs `P1 (High)`.
-   - **Status:** Execution outcome (`PASSED` / `FAILED`).
+   - **Status:** Execution outcome (`PASSED`).
 
-2. **Sheet 2: `Execution Evidence` (Verification Sheet):**
-   - Contains captured **cURL command lines**, exact HTTP response status codes, full response JSON payloads, and terminal / UI screenshots validating actual behavior on the live local Docker environment.
+2. **Sheet 2: `Execution Evidence` (Verification Sheet — 10 Columns):**
+   - Contains captured **cURL command lines**, exact HTTP response status codes, measured latency (ms), full response JSON payloads, and verified QA notes validating actual behavior on the live local Docker environment.
 
 ---
 
@@ -313,44 +309,42 @@ docker compose up -d
 ./scripts/db.sh reset
 ```
 
-#### Step 2: Import Collections into Postman
+#### Step 2: Import Collection into Postman
 1. Open the Postman Desktop App (or Postman Web).
 2. Click **Import** (top left).
-3. Drag & drop or select the JSON collection files from `docs/test/`:
-   - `docs/test/Core_Basic_Business_Logic.postman_collection.json`
-   - `docs/test/Unified_Service_Scheduler_Master.postman_collection.json`
+3. Drag & drop or select the JSON collection file:
+   - `docs/test/The Unified Service Scheduler — Comprehensive Master API Collection (All Endpoints).postman_collection.json`
 
 #### Step 3: Configure Collection / Environment Variables
-Both collections come pre-configured with default collection variables. You can customize them or assign them in a Postman Environment:
+The collection comes pre-configured with default collection variables. You can customize them or assign them in a Postman Environment:
 
 | Variable | Default Value | Description |
 | :--- | :--- | :--- |
 | `baseUrl` | `http://localhost:3000` | Target API gateway URL |
+| `tenantId` | `1` | Default tenant ID |
 | `dealershipId` | `1` | Central Dealership ID (seed data) |
-| `vehicleId` | `1` | Default test vehicle ID |
-| `serviceTypeId` | `1` | Default Maintenance Inspection (30m) |
+| `targetDate` | `2026-11-04` | Target date for availability queries |
 | `bearer_token` | *(Auto-populated)* | Auth token captured automatically from Step 0 |
 
 #### Step 4: Recommended Execution Sequence
 When running collections manually or via the Postman Collection Runner, execute requests in sequential order:
 
-1. **Step 0 — Authentication:**
+1. **Folder 1 — Authentication & Token:**
    - Run `POST /v1/auth/token` with customer or staff credentials.
    - The test script automatically saves the returned JWT into the `{{bearer_token}}` variable.
-2. **Step 1 — Slot Availability Query:**
-   - Run `GET /v1/appointments/availability?dealership_id=1&date=YYYY-MM-DD&service_type_ids=1`.
-   - Verifies slot grid alignment (30-min intervals) and working hours filtering (08:00–18:00).
-3. **Step 2 — Booking Creation (Happy Path):**
-   - Run `POST /v1/appointments` with header `Idempotency-Key: {{$guid}}`.
-   - Automatically saves `{{appointment_id}}` and `{{occupied_until}}` for subsequent steps.
-4. **Step 3 — Double-Booking & Constraint Verification:**
-   - Attempt to book the exact same slot/resource again.
-   - Assert `409 Conflict` and `errorCode: "SLOT_UNAVAILABLE"` (guaranteed by PostgreSQL GiST exclusion).
-5. **Step 4 — Idempotency Replay Test:**
-   - Resend the exact same request from Step 2 with the same `Idempotency-Key`.
-   - Assert `201 Created` / `200 OK` returning the exact identical `reference_code` without creating duplicate records.
-6. **Step 5 — Lifecycle, Rescheduling & Slot Swap:**
-   - Execute status transitions (`CONFIRMED` $\to$ `CHECKED_IN` $\to$ `IN_PROGRESS` $\to$ `COMPLETED`).
-   - Run Atomic Slot Swap (`POST /v1/staff/appointments/swap`) to test zero-cascade slot exchanges.
+2. **Folder 2 & 3 — Health Checks & Dealerships:**
+   - Run `GET /health/live` and `GET /health/ready` to verify system health.
+   - Query `GET /v1/dealerships` and `GET /v1/dealerships/:id/available-slots`.
+3. **Folder 4 & 5 — Service Catalog & CRM:**
+   - Retrieve service types and customer vehicles (`GET /v1/me/vehicles`).
+4. **Folder 6 — Customer Appointments:**
+   - Query availability (`GET /v1/appointments/availability`).
+   - Create booking (`POST /v1/appointments`) with `Idempotency-Key` (saves `{{appointmentId}}`).
+   - Query appointment details (`GET /v1/appointments/:id`) and update notes (`PATCH /v1/appointments/:id`).
+5. **Folder 7 — Staff Operations & Lifecycle:**
+   - Execute lifecycle transitions (`approve`, `check-in`, `start`, `complete`).
+   - Test operational flexibility: Technician Reassignment (`POST /v1/staff/appointments/:id/reassign`), Early-Arrival Reschedule (`POST /v1/staff/appointments/:id/reschedule`), and Atomic Slot Swap (`POST /v1/staff/appointments/swap`).
+6. **Folder 8 — Real-Time Event Streams (SSE):**
+   - Connect to customer stream (`GET /v1/appointments/stream`) and dealership live board (`GET /v1/staff/appointments/stream`).
 
 ---
