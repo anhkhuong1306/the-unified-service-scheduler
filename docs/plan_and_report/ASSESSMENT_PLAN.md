@@ -3,7 +3,8 @@
 **Vị trí:** Backend Engineer  
 **Đề bài:** Scenario A — The Unified Service Scheduler (Domain: Ownership)  
 **Kiến trúc:** **NestJS Monorepo (`apps/` + `libs/`)** chia theo phân hệ **DMS**, kiểm soát ranh giới bằng **`@app/contracts` + `eslint-plugin-boundaries`**  
-**Tech Stack:** Node.js 22+ LTS, TypeScript 5+, NestJS, TypeORM, PostgreSQL 18 (Docker Compose), Minimal Mock OIDC SSO (`jose` RS256 JWT + JWKS), Pino + `AsyncLocalStorage`, Jest + Supertest, `@nestjs/swagger`
+**Tech Stack:** Node.js 22+ LTS, TypeScript 5+, NestJS, TypeORM, PostgreSQL 18 (Docker Compose), Minimal Mock OIDC SSO (`jose` RS256 JWT + JWKS), Pino + `AsyncLocalStorage`, Jest + Supertest, `@nestjs/swagger`  
+**Tiến độ Tổng thể:** **6/7 Ngày Hoàn thành (90%) — Sẵn sàng Rà soát & Quay Video Nộp bài**
 
 ---
 
@@ -34,11 +35,11 @@
 
 ---
 
-### 🚀 Ngày 2: Dựng Khung NestJS Monorepo, Docker PostgreSQL 18 & `@app/common`
-- [ ] **2.1. Khởi tạo Git & Docker Compose:**
+### ✅ Ngày 2: Dựng Khung NestJS Monorepo, Docker PostgreSQL 18 & `@app/common` (ĐÃ HOÀN THÀNH)
+- [x] **2.1. Khởi tạo Git & Docker Compose:**
   - Khởi tạo Git repo trong `source/`, tạo nhánh làm việc theo quy ước `feature/ai/...`.
   - Tạo `docker-compose.yml` với Node.js 22+ LTS (`ENV TZ=UTC` + `tzdata`) và **PostgreSQL 18** (bật sẵn extension `btree_gist`).
-- [ ] **2.2. Khởi tạo NestJS Monorepo (`nest-cli.json`, `tsconfig.json`) & `@app/common`:**
+- [x] **2.2. Khởi tạo NestJS Monorepo (`nest-cli.json`, `tsconfig.json`) & `@app/common`:**
   - Tạo cấu trúc `apps/scheduler-api`, `apps/scheduler-worker` và `libs/common`, `libs/contracts`, `libs/workshop`, `libs/crm`, `libs/organization`, `libs/sso-mock`.
   - Xây dựng `AsyncLocalStorage` context (`RequestContextService`) + `CorrelationIdMiddleware`.
   - Xây dựng `ResponseEnvelopeInterceptor` & `GlobalExceptionFilter` chuẩn `{ statusCode, errorCode, data, message, meta }`.
@@ -47,35 +48,35 @@
 
 ---
 
-### 🔐 Ngày 3: Minimal Mock OIDC (`@app/sso-mock`) + `@app/organization` + `@app/crm`
-- [ ] **3.1. `@app/sso-mock` (Thư viện `jose` chuẩn OIDC):**
+### ✅ Ngày 3: Minimal Mock OIDC (`@app/sso-mock`) + `@app/organization` + `@app/crm` (ĐÃ HOÀN THÀNH)
+- [x] **3.1. `@app/sso-mock` (Thư viện `jose` chuẩn OIDC):**
   - Bảng `sso_clients` (`client_id`, `client_secret`), `sso_users`.
   - Script CLI `npm run sso:keys` (sinh cặp khóa RSA) & `npm run sso:issue-token -- <email>` (tạo sẵn token bypass login).
   - Endpoints: `GET /.well-known/openid-configuration`, `GET /oauth/jwks`, `POST /oauth/token` (`grant_type = password`).
   - `OidcJwtAuthGuard` + `@CurrentActor()` decorator ở `@app/common` verify JWT RS256 qua JWKS.
-- [ ] **3.2. `@app/organization` & `@app/crm` + `@app/contracts`:**
+- [x] **3.2. `@app/organization` & `@app/crm` + `@app/contracts`:**
   - Entities & Migrations cho `tenants`, `dealerships`, `staff_members`, `customers`, `vehicles` (có `license_plate`).
   - Định nghĩa DI tokens & DTOs trong `@app/contracts` (`CRM_DIRECTORY_CONTRACT`, `ORGANIZATION_DIRECTORY_CONTRACT`).
   - Cấu hình `eslint-plugin-boundaries` kiểm soát chặt ranh giới import giữa các thư viện trong `libs/`.
 
 ---
 
-### ⚙️ Ngày 4: Core Workshop Engine (`@app/workshop`) — Availability & Booking
-- [ ] **4.1. Schema `@app/workshop` & GiST Exclusion Constraints:**
+### ✅ Ngày 4: Core Workshop Engine (`@app/workshop`) — Availability & Booking (ĐÃ HOÀN THÀNH)
+- [x] **4.1. Schema `@app/workshop` & GiST Exclusion Constraints:**
   - Entities & Migrations cho `workshop_settings` (có `timezone`), `skills`, `service_types`, `service_bays`, `technicians`, `technician_skills`, `technician_unavailabilities`, `bay_closures`, `appointments` (kèm snapshot + audit columns + `period tstzrange`), `appointment_events`, `idempotency_keys` (`UNIQUE(subject, key)`, cột `locked_until` lease 60s).
   - Cài đặt 3 ràng buộc `EXCLUDE USING gist` (`no_bay_overlap`, `no_technician_overlap`, `no_vehicle_overlap`).
-- [ ] **4.2. Availability (1 SQL Query) & Transactional Booking (Customer + Dealership Advisory Locks):**
+- [x] **4.2. Availability (1 SQL Query) & Transactional Booking (Customer + Dealership Advisory Locks):**
   - `GetDealershipAvailabilityUseCase`: 1 câu SQL với `generate_series` tính toán toàn bộ slot trong ngày (`end_at ≤ closes_at`, trừ lịch nghỉ/đóng khoang).
   - `GetAvailableTechniciansUseCase`: Trả danh sách technician đủ chuyên môn và đang trống tại khung giờ khách chọn.
   - `IdempotencyInterceptor`: `INSERT` trước trạng thái `IN_PROGRESS` kèm lease 60s (`locked_until = now() + 60s`).
   - `CreateAppointmentUseCase`: Chạy trên 1 `EntityManager` trong `dataSource.transaction()`, xin khóa theo thứ tự `pg_advisory_xact_lock(NS_CUSTOMER::int4, customerId::int4)` rồi `pg_advisory_xact_lock(NS_BOOKING::int4, dealershipId::int4)`. Kiểm tra `max_active_per_customer` xuyên đại lý, chọn Bay + Technician (best-fit hoặc theo chỉ định), cập nhật `idempotency_keys` sang `COMPLETED` cùng transaction, gọi `pg_notify('appointment_events', payload)` và commit.
-- [ ] **4.3. Database Seeder:**
+- [x] **4.3. Database Seeder:**
   - Seed 2 Dealerships (Dealership A: `requires_approval = false`; Dealership B: `requires_approval = true`), mỗi đại lý 10 Bays + 10 Technicians đa dạng kỹ năng, 4 gói `ServiceType` chuẩn lưới 30 phút (`45'+15'`, `75'+15'`, `105'+15'`, `165'+15'`), Customers, Vehicles, Staff và in sẵn danh sách Token mẫu.
 
 ---
 
-### 🔄 Ngày 5: Edit / Reassign / Reschedule / Swap, State Machine, Worker & Kiểm thử Concurrency
-- [ ] **5.1. Chỉnh sửa Lịch hẹn, Reassign, Staff Reschedule, Atomic Slot Swap & State Machine:**
+### ✅ Ngày 5: Edit / Reassign / Reschedule / Swap, State Machine, Worker & Kiểm thử Concurrency (ĐÃ HOÀN THÀNH)
+- [x] **5.1. Chỉnh sửa Lịch hẹn, Reassign, Staff Reschedule, Atomic Slot Swap & State Machine:**
   - `UpdateAppointmentUseCase` (Customer): Cho phép sửa `start_at`, `service_type_id`, `vehicle_id`, `technician_id`, `notes` (kiểm tra đồng thời **cả Bay và Technician** trống dưới advisory lock + optimistic lock `If-Match`).
   - `ReassignAppointmentUseCase` (Staff): Cho phép đổi `technician_id` / `service_bay_id` nếu còn trống.
   - `RescheduleAppointmentUseCase` (`POST /v1/staff/appointments/{id}/reschedule` — Staff): Dời giờ cho khách tới sớm (Kịch bản A & B), override lead time, kiểm tra cả Bay và Technician trống.
@@ -86,7 +87,7 @@
     - `GET /v1/staff/appointments/stream?technician_id=` (`@Sse()`): Đẩy real-time cho màn hình Dealership & Technician Board.
     - Hỗ trợ đồng bộ xuyên process (`apps/scheduler-worker`) và multi-pod không cần Redis, kèm kiểm tra `version` chống event cũ đến lệch thứ tự.
   - `ExpirePendingAppointmentsCron` trong `apps/scheduler-worker`: Chuyển các lịch `PENDING` tới mốc `start_at − cancellation_cutoff` sang `EXPIRED` và bắn `pg_notify`.
-- [ ] **5.2. Bộ Kiểm thử Toàn diện (Jest Unit, E2E & `Promise.all` Concurrency Suite):**
+- [x] **5.2. Bộ Kiểm thử Toàn diện (Jest Unit, E2E & `Promise.all` Concurrency Suite):**
   - Unit & E2E Tests bao phủ toàn bộ luồng nghiệp vụ.
   - **Concurrent HTTP Booking Suite (`Promise.all` + Supertest)** trên PostgreSQL thật:
     1. Bắn song song 20+ requests vào cùng khung giờ: số `201` $\le$ capacity, còn lại nhận `409`.
@@ -95,12 +96,16 @@
 
 ---
 
-### 📄 Ngày 6: `@nestjs/swagger` OpenAPI Docs, 2 Màn hình Live Demo (`/demo`), `README.md` & AI Narrative
-- [ ] **6.1. Tích hợp `@nestjs/swagger` (`/docs/api`), 2 Màn hình Live SSE Demo (`/demo` cho Customer & Dealership/Technician) & `@nestjs/terminus` Health Checks (`/health/live`, `/health/ready`).**
-- [ ] **6.2. Viết `source/README.md` kèm bộ `cURL` mẫu và mục AI Collaboration Narrative (17 vòng phản biện).**
+### ✅ Ngày 6: OpenAPI Docs, Live Demo Screens, README, QA Matrices & Postman Collections (ĐÃ HOÀN THÀNH)
+- [x] **6.1. Tích hợp `@nestjs/swagger` (`/docs/api`), 2 Màn hình Live SSE Demo (`/demo` cho Customer & Dealership/Technician) & `@nestjs/terminus` Health Checks (`/health/live`, `/health/ready`).**
+- [x] **6.2. Viết `source/README.md` kèm bộ `cURL` mẫu và mục AI Collaboration Narrative (17 vòng phản biện).**
+- [x] **6.3. Bộ QA Test Matrices (Excel) & Executable Postman Collections (`docs/test/`):**
+  - Xây dựng 2 file Excel test matrix chuẩn 2 sheet (Spec & Live Docker Execution Evidence): `Core_Basic_Business_Logic_TestCases.xlsx` (18 TC P0) và `Unified_Service_Scheduler_TestCases.xlsx` (47+ TC toàn diện).
+  - Xây dựng 2 runnable Postman collection tự động assertion và chain dynamic variables: `Core_Basic_Business_Logic.postman_collection.json` và `Unified_Service_Scheduler_Master.postman_collection.json`.
 
 ---
 
-### 🎬 Ngày 7: Rà soát Cuối cùng & Quay Video Presentation (5–10 phút)
-- [ ] **7.1. Chạy thử toàn bộ từ trạng thái sạch (`docker compose down -v && docker compose up -d`).**
-- [ ] **7.2. Quay Video 5–10 phút theo kịch bản 5 phần và nộp bài.**
+### 🎬 Ngày 7: Rà soát Cuối cùng & Quay Video Presentation (ĐANG TIẾN HÀNH / SẴN SÀNG)
+- [x] **7.1. Soạn thảo Kịch bản Video Presentation chi tiết:** Hoàn thành [`docs/VIDEO_SUBMISSION_SCRIPT.md`](../VIDEO_SUBMISSION_SCRIPT.md) với cấu trúc 5 phần, phân bổ thời lượng 5–10 phút, checklist kịch bản demo live màn hình và Q&A.
+- [ ] **7.2. Chạy thử toàn bộ từ trạng thái sạch (`docker compose down -v && docker compose up -d` & `./scripts/db.sh reset`).**
+- [ ] **7.3. Quay Video 5–10 phút theo kịch bản và nộp bài.**
