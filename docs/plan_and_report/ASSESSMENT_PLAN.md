@@ -4,7 +4,7 @@
 **Đề bài:** Scenario A — The Unified Service Scheduler (Domain: Ownership)  
 **Kiến trúc:** **NestJS Monorepo (`apps/` + `libs/`)** chia theo phân hệ **DMS**, kiểm soát ranh giới bằng **`@app/contracts` + `eslint-plugin-boundaries`**  
 **Tech Stack:** Node.js 22+ LTS, TypeScript 5+, NestJS, TypeORM, PostgreSQL 18 (Docker Compose), Minimal Mock OIDC SSO (`jose` RS256 JWT + JWKS), Pino + `AsyncLocalStorage`, Jest + Supertest, `@nestjs/swagger`  
-**Tiến độ Tổng thể:** **6/7 Ngày Hoàn thành (90%) — Sẵn sàng Rà soát & Quay Video Nộp bài**
+**Tiến độ Tổng thể:** **7/7 Ngày Hoàn thành (100%) — Hoàn tất Toàn diện & Sẵn sàng Nộp bài**
 
 ---
 
@@ -105,6 +105,6 @@
 
 ---
 
-### 🎬 Ngày 7: Rà soát Cuối cùng & Quay Video Presentation (ĐANG TIẾN HÀNH / SẴN SÀNG)
-- [ ] **7.1. Chạy thử toàn bộ từ trạng thái sạch (`docker compose down -v && docker compose up -d` & `./scripts/db.sh reset`).**
-- [ ] **7.2. Quay Video 5–10 phút theo kịch bản và nộp bài.**
+### ✅ Ngày 7: Rà soát Cuối cùng & Quay Video Presentation (ĐÃ HOÀN THÀNH)
+- [x] **7.1. Chạy thử toàn bộ từ trạng thái sạch (`docker compose down -v && docker compose up -d` & `./scripts/db.sh reset`).**
+- [x] **7.2. Quay Video 5–10 phút theo kịch bản và nộp bài.**
