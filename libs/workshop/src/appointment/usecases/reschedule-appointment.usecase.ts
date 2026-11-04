@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import {
+  DomainException,
+  ErrorCode,
   ForbiddenDomainException,
   InvalidStateTransitionException,
   LogSpan,
@@ -9,9 +11,9 @@ import {
   VehicleAlreadyBookedException,
 } from '@app/common';
 import { Appointment } from '../entities/appointment.entity';
+import { AppointmentStatus } from '../enums/appointment-status.enum';
 import { RescheduleAppointmentDto } from '../dto/reschedule-appointment.dto';
 import { ActorContext } from '../types/actor-context.interface';
-import { ACTIVE_STATUSES } from '../types/appointment.constants';
 import { AppointmentEventsService } from '../services/appointment-events.service';
 import { BookingLockService } from '../services/booking-lock.service';
 import { AppointmentRepository } from '../repositories/appointment.repository';
@@ -63,12 +65,8 @@ export class RescheduleAppointmentUseCase {
         throw new ResourceNotFoundException(`Appointment not found with ID ${appointmentId}`);
       }
 
-      const isActive = (ACTIVE_STATUSES as readonly string[]).includes(appointment.status);
-      if (!isActive) {
-        throw new InvalidStateTransitionException(
-          `Cannot reschedule appointment currently in ${appointment.status} status`,
-        );
-      }
+      Appointment.assertStaffDealership(appointment, actor);
+      Appointment.assertModifiable(appointment, 'reschedule');
 
       await this.locks.lockDealership(manager, appointment.dealershipId);
 
@@ -91,6 +89,15 @@ export class RescheduleAppointmentUseCase {
       const targetStart = dto.startAt;
       if (!targetStart) {
         throw new ValidationFailedException('New scheduled start time is required');
+      }
+
+      if (Appointment.isPast(targetStart)) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_FAILED,
+          'New appointment start time cannot be in the past',
+          null,
+          400,
+        );
       }
 
       // Validate slot grid, early arrival bypasses customer lead-time
@@ -129,6 +136,10 @@ export class RescheduleAppointmentUseCase {
         excludeAppointmentId: appointment.id,
       });
 
+      const notesValue = dto.reason
+        ? (dto.notes ? `${dto.notes} (Reason: ${dto.reason})` : dto.reason)
+        : dto.notes;
+
       const changes = {
         previousStartAt: appointment.startAt.toISOString(),
         newStartAt: newSlot.startAt.toISOString(),
@@ -136,7 +147,8 @@ export class RescheduleAppointmentUseCase {
         newBayId: bayId,
         previousTechnicianId: appointment.technicianId,
         newTechnicianId: technicianId,
-        notes: dto.notes,
+        reason: dto.reason,
+        notes: notesValue,
       };
 
       const actorIdentifier = actor.actorCode || actor.actorName || actor.actorSub;
@@ -148,7 +160,7 @@ export class RescheduleAppointmentUseCase {
         occupiedUntil: newSlot.occupiedUntil,
         serviceBayId: bayId,
         technicianId,
-        ...(dto.notes ? { notes: dto.notes } : {}),
+        ...(notesValue ? { notes: notesValue } : {}),
         updated_by: actorIdentifier,
       });
 

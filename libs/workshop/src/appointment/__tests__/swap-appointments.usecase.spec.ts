@@ -207,4 +207,88 @@ describe('SwapAppointmentsUseCase (Unit - Concurrency & Boundary Protection)', (
       ),
     ).rejects.toThrow(InvalidStateTransitionException);
   });
+
+  it('should reject swap if staff belongs to another dealership', async () => {
+    const apptA: any = {
+      id: 'a1111111-1111-1111-1111-111111111111',
+      dealershipId: '1',
+      startAt: new Date('2030-01-01T08:00:00.000Z'),
+      status: AppointmentStatus.CONFIRMED,
+    };
+    const apptB: any = {
+      id: 'b2222222-2222-2222-2222-222222222222',
+      dealershipId: '1',
+      startAt: new Date('2030-01-01T09:00:00.000Z'),
+      status: AppointmentStatus.CONFIRMED,
+    };
+
+    mockAppointmentRepo.findByIdWithLock.mockImplementation((m: any, id: string) => {
+      if (id === apptA.id) return Promise.resolve(apptA);
+      if (id === apptB.id) return Promise.resolve(apptB);
+      return Promise.resolve(null);
+    });
+
+    await expect(
+      useCase.execute(
+        { appointmentIdA: apptA.id, appointmentIdB: apptB.id },
+        { actorSub: 'staff-south-uuid', actorType: 'staff', tenantId: '1', dealershipId: '2' },
+      ),
+    ).rejects.toThrow(ForbiddenDomainException);
+  });
+
+  it('should reject swap if either appointment is in the past', async () => {
+    const apptA: any = {
+      id: 'a1111111-1111-1111-1111-111111111111',
+      dealershipId: '1',
+      startAt: new Date('2020-01-01T08:00:00.000Z'), // in past
+      status: AppointmentStatus.CONFIRMED,
+    };
+    const apptB: any = {
+      id: 'b2222222-2222-2222-2222-222222222222',
+      dealershipId: '1',
+      startAt: new Date('2030-01-01T09:00:00.000Z'),
+      status: AppointmentStatus.CONFIRMED,
+    };
+
+    mockAppointmentRepo.findByIdWithLock.mockImplementation((m: any, id: string) => {
+      if (id === apptA.id) return Promise.resolve(apptA);
+      if (id === apptB.id) return Promise.resolve(apptB);
+      return Promise.resolve(null);
+    });
+
+    await expect(
+      useCase.execute(
+        { appointmentIdA: apptA.id, appointmentIdB: apptB.id },
+        { actorSub: 'staff-uuid', actorType: 'staff', tenantId: '1', dealershipId: '1' },
+      ),
+    ).rejects.toThrow('Cannot swap appointments that are already in the past');
+  });
+
+  it('should reject swap if either appointment is CHECKED_IN or IN_PROGRESS', async () => {
+    const apptA: any = {
+      id: 'a1111111-1111-1111-1111-111111111111',
+      dealershipId: '1',
+      startAt: new Date('2030-01-01T08:00:00.000Z'),
+      status: AppointmentStatus.CHECKED_IN,
+    };
+    const apptB: any = {
+      id: 'b2222222-2222-2222-2222-222222222222',
+      dealershipId: '1',
+      startAt: new Date('2030-01-01T09:00:00.000Z'),
+      status: AppointmentStatus.CONFIRMED,
+    };
+
+    mockAppointmentRepo.findByIdWithLock.mockImplementation((m: any, id: string) => {
+      if (id === apptA.id) return Promise.resolve(apptA);
+      if (id === apptB.id) return Promise.resolve(apptB);
+      return Promise.resolve(null);
+    });
+
+    await expect(
+      useCase.execute(
+        { appointmentIdA: apptA.id, appointmentIdB: apptB.id },
+        { actorSub: 'staff-uuid', actorType: 'staff', tenantId: '1', dealershipId: '1' },
+      ),
+    ).rejects.toThrow('Appointments can only be swapped when status is PENDING or CONFIRMED');
+  });
 });

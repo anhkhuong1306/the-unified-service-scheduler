@@ -13,14 +13,16 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Observable } from 'rxjs';
+import { from, Observable, switchMap } from 'rxjs';
 import {
   ApiDocErrors,
   ApiDocSuccess,
   DEFAULT_TENANT_ID,
   RequestContextService,
 } from '@app/common';
+import { StaffRepository } from '@app/organization';
 import {
+  ActorContext,
   Appointment,
   AppointmentStreamService,
   ReassignAppointmentDto,
@@ -54,9 +56,10 @@ export class StaffAppointmentsController {
     private readonly rescheduleUseCase: RescheduleAppointmentUseCase,
     private readonly swapUseCase: SwapAppointmentsUseCase,
     private readonly streamService: AppointmentStreamService,
+    private readonly staffRepo: StaffRepository,
   ) {}
 
-  private getActorContext() {
+  private async getActorContext(): Promise<ActorContext> {
     const actorSub = RequestContextService.getActorSub();
     if (!actorSub) {
       throw new UnauthorizedException('Missing authentication token or credentials');
@@ -66,7 +69,26 @@ export class StaffAppointmentsController {
       throw new ForbiddenException('Only staff or system actors can perform workshop staff operations');
     }
     const tenantId = String(RequestContextService.getTenantId() ?? DEFAULT_TENANT_ID);
-    return { actorSub, actorType, tenantId };
+
+    let dealershipId: string | null = null;
+    let actorName: string | undefined;
+
+    if (actorType === 'staff') {
+      const staffMember = await this.staffRepo.findByIdentitySubject(actorSub, tenantId);
+      if (!staffMember || !staffMember.dealershipId) {
+        throw new ForbiddenException('Staff member profile or assigned dealership not found');
+      }
+      dealershipId = String(staffMember.dealershipId);
+      actorName = staffMember.name;
+    }
+
+    return {
+      actorSub,
+      actorType,
+      tenantId,
+      dealershipId,
+      actorName,
+    };
   }
 
   @Sse('stream')
@@ -80,9 +102,12 @@ export class StaffAppointmentsController {
   public stream(
     @Query() queryDto: StaffStreamQueryDto = {},
   ): Observable<MessageEvent> {
-    const actor = this.getActorContext();
-    const { dealershipId, technicianId } = queryDto;
-    return this.streamService.streamForStaff(dealershipId, technicianId, actor.tenantId);
+    return from(this.getActorContext()).pipe(
+      switchMap((actor) => {
+        const dealershipId = actor.dealershipId ?? queryDto.dealershipId ?? undefined;
+        return this.streamService.streamForStaff(dealershipId, queryDto.technicianId, actor.tenantId);
+      }),
+    );
   }
 
   @Post('swap')
@@ -102,7 +127,7 @@ export class StaffAppointmentsController {
   public async swap(
     @Body() dto: SwapAppointmentsDto,
   ): Promise<SwapResult> {
-    const actor = this.getActorContext();
+    const actor = await this.getActorContext();
     return this.swapUseCase.execute(dto, actor);
   }
 
@@ -124,7 +149,7 @@ export class StaffAppointmentsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: TransitionStatusDto = {},
   ): Promise<Appointment> {
-    const actor = this.getActorContext();
+    const actor = await this.getActorContext();
     return this.transitionUseCase.execute(id, 'approve', actor, dto.reason);
   }
 
@@ -146,7 +171,7 @@ export class StaffAppointmentsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: TransitionStatusDto = {},
   ): Promise<Appointment> {
-    const actor = this.getActorContext();
+    const actor = await this.getActorContext();
     return this.transitionUseCase.execute(id, 'reject', actor, dto.reason);
   }
 
@@ -168,7 +193,7 @@ export class StaffAppointmentsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: TransitionStatusDto = {},
   ): Promise<Appointment> {
-    const actor = this.getActorContext();
+    const actor = await this.getActorContext();
     return this.transitionUseCase.execute(id, 'check_in', actor, dto.reason);
   }
 
@@ -190,7 +215,7 @@ export class StaffAppointmentsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: TransitionStatusDto = {},
   ): Promise<Appointment> {
-    const actor = this.getActorContext();
+    const actor = await this.getActorContext();
     return this.transitionUseCase.execute(id, 'start', actor, dto.reason);
   }
 
@@ -212,7 +237,7 @@ export class StaffAppointmentsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: TransitionStatusDto = {},
   ): Promise<Appointment> {
-    const actor = this.getActorContext();
+    const actor = await this.getActorContext();
     return this.transitionUseCase.execute(id, 'complete', actor, dto.reason);
   }
 
@@ -234,7 +259,7 @@ export class StaffAppointmentsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: TransitionStatusDto = {},
   ): Promise<Appointment> {
-    const actor = this.getActorContext();
+    const actor = await this.getActorContext();
     return this.transitionUseCase.execute(id, 'no_show', actor, dto.reason);
   }
 
@@ -256,7 +281,7 @@ export class StaffAppointmentsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: ReassignAppointmentDto,
   ): Promise<Appointment> {
-    const actor = this.getActorContext();
+    const actor = await this.getActorContext();
     return this.reassignUseCase.execute(id, dto, actor);
   }
 
@@ -282,7 +307,7 @@ export class StaffAppointmentsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: RescheduleAppointmentDto,
   ): Promise<Appointment> {
-    const actor = this.getActorContext();
+    const actor = await this.getActorContext();
     return this.rescheduleUseCase.execute(id, dto, actor);
   }
 }

@@ -12,7 +12,6 @@ import { Appointment } from '../entities/appointment.entity';
 import { SwapAppointmentsDto } from '../dto/swap-appointments.dto';
 import { ActorContext } from '../types/actor-context.interface';
 import { AppointmentStatus } from '../enums/appointment-status.enum';
-import { ACTIVE_STATUSES } from '../types/appointment.constants';
 import { AppointmentEventsService } from '../services/appointment-events.service';
 import { BookingLockService } from '../services/booking-lock.service';
 import { AppointmentRepository } from '../repositories/appointment.repository';
@@ -88,7 +87,7 @@ export class SwapAppointmentsUseCase {
         throw new ResourceNotFoundException(`Appointment not found with ID ${idB}`);
       }
 
-      if (apptA.dealershipId !== apptB.dealershipId) {
+      if (String(apptA.dealershipId) !== String(apptB.dealershipId)) {
         throw new DomainException(
           ErrorCode.VALIDATION_FAILED,
           'Cannot swap appointments belonging to different dealerships',
@@ -97,14 +96,8 @@ export class SwapAppointmentsUseCase {
         );
       }
 
-      const isActiveA = (ACTIVE_STATUSES as readonly string[]).includes(apptA.status);
-      const isActiveB = (ACTIVE_STATUSES as readonly string[]).includes(apptB.status);
-
-      if (!isActiveA || !isActiveB) {
-        throw new InvalidStateTransitionException(
-          `Cannot swap appointments. Both must be active, but found statuses: A=${apptA.status}, B=${apptB.status}`,
-        );
-      }
+      Appointment.assertStaffDealership(apptA, actor);
+      Appointment.assertSwappable(apptA, apptB);
 
       await this.locks.lockDealership(manager, apptA.dealershipId);
 
