@@ -860,7 +860,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/appointments/availability?dealer_ship_id={{dealershipId}}&date={{targetDate}}&service_type_ids=1,2&per_page=10&page=1",
+              "raw": "{{baseUrl}}/v1/appointments/availability?dealer_ship_id={{dealershipId}}&date={{targetDate}}&service_type_ids=1,2&limit=10&page=1",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -886,9 +886,9 @@
                   "description": "Service type IDs (snake_case alias)"
                 },
                 {
-                  "key": "per_page",
+                  "key": "limit",
                   "value": "10",
-                  "description": "Semantic alias per_page -> limit"
+                  "description": "Items per page (limit)"
                 },
                 {
                   "key": "page",
