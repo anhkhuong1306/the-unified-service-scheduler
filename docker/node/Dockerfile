@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     openssl \
     postgresql-client \
+    procps \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
 
