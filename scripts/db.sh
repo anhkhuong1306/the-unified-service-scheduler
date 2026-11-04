@@ -96,6 +96,14 @@ case "$ACTION" in
 
   reset)
     echo "🔄 Resetting database '$DB_NAME'..."
+    if is_docker_running; then
+      echo "🧹 Dropping and recreating public schema on '$DB_NAME'..."
+      docker exec -i -e PGPASSWORD="$DB_PASS" "$CONTAINER_NAME" \
+        psql -U "$DB_USER" -d "$DB_NAME" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO public;" >/dev/null 2>&1 || true
+    elif command -v psql >/dev/null 2>&1; then
+      echo "🧹 Dropping and recreating public schema on '$DB_NAME'..."
+      PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO public;" >/dev/null 2>&1 || true
+    fi
     run_sql_file "$INIT_FILE" "$DB_NAME"
     run_sql_file "$SCHEMA_FILE" "$DB_NAME"
     run_sql_file "$SEED_FILE" "$DB_NAME"

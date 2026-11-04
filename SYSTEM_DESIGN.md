@@ -3,7 +3,7 @@
 | Item | Value |
 | :--- | :--- |
 | Domain | Ownership — Service / Workshop |
-| Implemented layer | **Backend** (RESTful API + Real-Time SSE Streams + persistent PostgreSQL). Client layer is stubbed via OpenAPI/Swagger UI (`/docs/api`), two lightweight live SSE demo screens (`/demo` for Customer & Dealership/Technician), cURL and pre-issued tokens. |
+| Implemented layer | **Backend** (RESTful API + Real-Time SSE Streams + persistent PostgreSQL). Client layer is stubbed via OpenAPI/Swagger UI (`/docs/api`), cURL and pre-issued tokens. |
 | Stack | TypeScript 5+, Node.js 22+ LTS, **NestJS Monorepo (`apps/` + `libs/`)**, TypeORM, PostgreSQL 18, Structured JSON Logging, Docker Compose |
 | Document status | v5 — Post-Concurrency Review  |
 
@@ -75,7 +75,7 @@ Dealerships currently book service appointments manually. The goal is a backend 
 | Priority | Content |
 | :--- | :--- |
 | **P0 — core requirements** | Implemented an end-to-end booking flow: from token authentication and availability querying, to serialized allocation of bays and qualified technicians, resulting in auto-confirmed appointments. Validated system reliability using concurrent HTTP testing. |
-| **P1 — build for the future** | Approval flow (`requires_approval`), staff scope by dealership, reassignment, **staff reschedule (early-arrival override)**, **atomic slot swap**, **real-time SSE streams (`@Sse()` + PostgreSQL `LISTEN/NOTIFY` → RxJS `Subject` with event `version` ordering) & 2 live demo screens (Customer view + Dealership/Technician board)**, lifecycle state machine, PENDING expiry worker job, active-appointment limit (protected by customer advisory lock), atomic idempotency with 60s in-progress lease, optimistic locking, response envelope, structured JSON logging with masking & `@LogSpan()` decorator, SSO Mockup, OpenAPI/Swagger docs, module-boundary lint rules |
+| **P1 — build for the future** | Approval flow (`requires_approval`), staff scope by dealership, reassignment, **staff reschedule (early-arrival override)**, **atomic slot swap**, **real-time SSE streams (`@Sse()` + PostgreSQL `LISTEN/NOTIFY` → RxJS `Subject` with event `version` ordering for Customer & Dealership/Technician boards)**, lifecycle state machine, PENDING expiry worker job, active-appointment limit (protected by customer advisory lock), atomic idempotency with 60s in-progress lease, optimistic locking, response envelope, structured JSON logging with masking & `@LogSpan()` decorator, SSO Mockup, OpenAPI/Swagger docs, module-boundary lint rules |
 | **P2 — design only** | Overrun re-allocation, automatic no-show, transactional outbox + event bus (Kafka / RabbitMQ), Row-Level Security, waitlist, shift / closure management APIs, real SSO, physical microservice split |
 
 ---
@@ -197,7 +197,7 @@ source/
 flowchart TB
     subgraph Client["Client layer (stubbed)"]
         OAS["@nestjs/swagger OpenAPI UI (/docs/api)"]
-        DEMO["Live SSE Demo Views (/demo)<br/>1. Customer Screen | 2. Dealership & Technician Board"]
+        SSE_CLI["EventSource / SSE Clients<br/>Customer Screen & Dealership Board"]
         CURL["cURL scripts + pre-issued tokens"]
     end
 
@@ -736,7 +736,7 @@ sequenceDiagram
 4. **Channel Scoping & Technician Filtering:**
    - **Customer Stream (`GET /v1/appointments/stream`):** Authenticated customer receives only events where `event.customerId === actor.customerId`.
    - **Dealership & Technician Stream (`GET /v1/staff/appointments/stream?technician_id=`):** Authenticated staff receive only events where `event.dealershipId === actor.dealershipId`. When `?technician_id=X` is supplied for a specific Technician's live board, the stream filters for `event.technicianId === X || event.previousTechnicianId === X` (so when an appointment is reassigned or swapped away from Technician X, Technician X's board immediately removes it while the new Technician's board immediately adds it).
-5. **Two Built-in Live Demo Screens (`/demo`):** Alongside Swagger UI (`/docs/api`), `apps/scheduler-api` serves a lightweight split-screen/dual-view web interface (`/demo` — **Customer Live Screen** & **Dealership + Technician Live Board**) connected via `EventSource` SSE so evaluators can watch bookings, status transitions, and slot swaps synchronize in real time across both screens.
+5. **Standard HTML5 EventSource SSE Consumption:** Clients (Customer portal, Dealership dispatch board) connect directly to `/v1/appointments/stream` and `/v1/staff/appointments/stream` using standard `EventSource` interfaces or cURL (`curl -N -H "Accept: text/event-stream" ...`), receiving immediate keep-alive pings every 15s and instant state change notifications.
 
 ---
 
@@ -857,7 +857,6 @@ Implemented once in `@app/common` via `ResponseEnvelopeInterceptor` (for 2xx res
 | POST | `/v1/staff/appointments/{id}/reschedule` (`If-Match`) | Staff | Early arrival override: reschedule slot bypassing lead time |
 | POST | `/v1/staff/appointments/swap` | Staff | Atomic slot swap for two appointments with transient `SWAPPING` state |
 | POST | `/v1/staff/appointments/{id}/{approve\|reject\|check-in\|start\|complete\|no-show}` (`If-Match`) | Staff | Execute lifecycle state transition governed by `AppointmentStateMachine` |
-| GET | `/demo` | Evaluator / Browser | Live split-screen SSE demo: Customer View + Dealership/Technician Board |
 | GET | `/health/live`, `/health/ready` | Infrastructure | Health probes verifying Node event loop, PostgreSQL, and Redis connectivity |
 
 ### 9.3 Core Engineering Directives & Standards

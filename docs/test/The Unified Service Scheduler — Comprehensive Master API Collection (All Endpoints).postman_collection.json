@@ -1,62 +1,12 @@
 {
   "info": {
-    "_postman_id": "05e8965b-1d36-4a99-93fd-c109745f2c26",
+    "_postman_id": "64f52aa5-8b37-4eec-8c74-495aae5fc427",
     "name": "The Unified Service Scheduler — Comprehensive Master API Collection (All Endpoints)",
     "description": "Comprehensive Postman Collection covering 100% of the Unified Service Scheduler APIs with complete Query, Params, and Body payloads (in snake_case convention to verify normalizer middleware). Includes Auth, Health, Dealerships, Catalog, CRM, Customer Appointments, and Staff Lifecycle Operations.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "36503068",
+    "_collection_link": "https://satellite-participant-85505097-s-team.postman.co/workspace/satellite-participant-85505097'~be5516f3-c3c9-4f36-893b-56cbcabd710a/collection/36503068-64f52aa5-8b37-4eec-8c74-495aae5fc427?action=share&source=collection_link&creator=36503068"
   },
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:3000",
-      "type": "string"
-    },
-    {
-      "key": "bearer_token",
-      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhMTExMTExMS0xMTExLTExMTEtMTExMS0xMTExMTExMTExMTEiLCJyb2xlcyI6WyJjdXN0b21lciIsInN0YWZmIl0sInRlbmFudF9pZCI6MSwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDozMDAwIiwiYXVkIjoic2NoZWR1bGVyLWFwaSJ9.bW9ja19zaWc",
-      "type": "string"
-    },
-    {
-      "key": "tenantId",
-      "value": "1",
-      "type": "string"
-    },
-    {
-      "key": "dealershipId",
-      "value": "1",
-      "type": "string"
-    },
-    {
-      "key": "vehicleId",
-      "value": "1",
-      "type": "string"
-    },
-    {
-      "key": "serviceTypeId",
-      "value": "1",
-      "type": "string"
-    },
-    {
-      "key": "technicianId",
-      "value": "1",
-      "type": "string"
-    },
-    {
-      "key": "appointmentId",
-      "value": "cc4d062e-08ee-4539-b989-dd00f6ba18be",
-      "type": "string"
-    },
-    {
-      "key": "appointmentId2",
-      "value": "dd5e173f-19ff-5640-c090-ee11g7cb29cf",
-      "type": "string"
-    },
-    {
-      "key": "targetDate",
-      "value": "2026-11-02",
-      "type": "string"
-    }
-  ],
   "item": [
     {
       "name": "1. Authentication & Token",
@@ -69,12 +19,32 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status code check', function () {",
+                  "pm.test(\"Status code is 200\", function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
-                  "pm.test('Response is valid JSON', function () {",
+                  "pm.test(\"Extract access_token and set to variables\", function () {",
                   "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData).to.be.an('object');",
+                  "    var token = (jsonData.data && jsonData.data.access_token) || ",
+                  "                (jsonData.data && jsonData.data.accessToken) ||",
+                  "                jsonData.access_token || ",
+                  "                jsonData.accessToken;",
+                  "    pm.expect(token).to.be.a(\"string\").and.not.empty;",
+                  "    ",
+                  "    // Automatically set token to collection & environment variables",
+                  "    pm.collectionVariables.set(\"bearer_token\", token);",
+                  "    pm.collectionVariables.set(\"access_token\", token);",
+                  "    pm.environment.set(\"bearer_token\", token);",
+                  "    pm.environment.set(\"access_token\", token);",
+                  "    ",
+                  "    var role = (jsonData.data && jsonData.data.claims && jsonData.data.claims.roles && jsonData.data.claims.roles[0]) || \"\";",
+                  "    if (role === \"staff\") {",
+                  "        pm.collectionVariables.set(\"staff_token\", token);",
+                  "        pm.environment.set(\"staff_token\", token);",
+                  "    } else if (role === \"customer\") {",
+                  "        pm.collectionVariables.set(\"customer_token\", token);",
+                  "        pm.environment.set(\"customer_token\", token);",
+                  "    }",
+                  "    console.log(\"✅ Token successfully saved to Postman variables (bearer_token, access_token)!\");",
                   "});"
                 ]
               }
@@ -115,7 +85,8 @@
               ]
             },
             "description": "Generates a signed JWT Bearer Token for testing API authorization across customer and staff roles."
-          }
+          },
+          "response": []
         },
         {
           "name": "GET /v1/auth/token — Get Test Token (Convenience)",
@@ -125,12 +96,32 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status code check', function () {",
+                  "pm.test(\"Status code is 200\", function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
-                  "pm.test('Response is valid JSON', function () {",
+                  "pm.test(\"Extract access_token and set to variables\", function () {",
                   "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData).to.be.an('object');",
+                  "    var token = (jsonData.data && jsonData.data.access_token) || ",
+                  "                (jsonData.data && jsonData.data.accessToken) ||",
+                  "                jsonData.access_token || ",
+                  "                jsonData.accessToken;",
+                  "    pm.expect(token).to.be.a(\"string\").and.not.empty;",
+                  "    ",
+                  "    // Automatically set token to collection & environment variables",
+                  "    pm.collectionVariables.set(\"bearer_token\", token);",
+                  "    pm.collectionVariables.set(\"access_token\", token);",
+                  "    pm.environment.set(\"bearer_token\", token);",
+                  "    pm.environment.set(\"access_token\", token);",
+                  "    ",
+                  "    var role = (jsonData.data && jsonData.data.claims && jsonData.data.claims.roles && jsonData.data.claims.roles[0]) || \"\";",
+                  "    if (role === \"staff\") {",
+                  "        pm.collectionVariables.set(\"staff_token\", token);",
+                  "        pm.environment.set(\"staff_token\", token);",
+                  "    } else if (role === \"customer\") {",
+                  "        pm.collectionVariables.set(\"customer_token\", token);",
+                  "        pm.environment.set(\"customer_token\", token);",
+                  "    }",
+                  "    console.log(\"✅ Token successfully saved to Postman variables (bearer_token, access_token)!\");",
                   "});"
                 ]
               }
@@ -179,7 +170,8 @@
               ]
             },
             "description": "Convenience endpoint to quickly grab a JWT Token via query params."
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -230,7 +222,8 @@
               ]
             },
             "description": "Kubernetes liveness check verifying the application process is running."
-          }
+          },
+          "response": []
         },
         {
           "name": "GET /health/ready — Readiness Probe",
@@ -276,7 +269,8 @@
               ]
             },
             "description": "Kubernetes readiness check verifying DB connection and Redis cluster availability."
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -359,7 +353,8 @@
               ]
             },
             "description": "Lists all operational dealerships for tenant with standard offset pagination and code/name filters."
-          }
+          },
+          "response": []
         },
         {
           "name": "GET /v1/dealerships/:id/available-slots — Daily Available Slots Grid",
@@ -405,7 +400,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/dealerships/{{dealershipId}}/available-slots?date={{targetDate}}&service_type_ids=1,2&technician_ids=1,2&page=1&limit=10",
+              "raw": "{{baseUrl}}/v1/dealerships/:id/available-slots?date={{targetDate}}&service_type_ids=1,2&technician_ids=1,2&page=1&limit=10",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -414,12 +409,6 @@
                 "dealerships",
                 ":id",
                 "available-slots"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "{{dealershipId}}"
-                }
               ],
               "query": [
                 {
@@ -447,10 +436,17 @@
                   "value": "10",
                   "description": "Page size limit"
                 }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{dealershipId}}"
+                }
               ]
             },
             "description": "Consolidated Master Route for daily available slots grid, returning available technicians and bookable services per slot with offset pagination."
-          }
+          },
+          "response": []
         },
         {
           "name": "GET /v1/dealerships/:id/technicians — Dealership Technicians / Slot Lookups",
@@ -496,7 +492,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/dealerships/{{dealershipId}}/technicians?service_type_id=1&start_at=2026-11-02T01:00:00.000Z&page=1&limit=10",
+              "raw": "{{baseUrl}}/v1/dealerships/:id/technicians?service_type_id=1&start_at=2026-11-02T01:00:00.000Z&page=1&limit=10",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -506,24 +502,18 @@
                 ":id",
                 "technicians"
               ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "{{dealershipId}}"
-                }
-              ],
               "query": [
                 {
                   "key": "code",
                   "value": "TECH",
-                  "disabled": true,
-                  "description": "Filter by technician code"
+                  "description": "Filter by technician code",
+                  "disabled": true
                 },
                 {
                   "key": "name",
                   "value": "Alex",
-                  "disabled": true,
-                  "description": "Filter by technician name"
+                  "description": "Filter by technician name",
+                  "disabled": true
                 },
                 {
                   "key": "service_type_id",
@@ -545,10 +535,17 @@
                   "value": "10",
                   "description": "Limit"
                 }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{dealershipId}}"
+                }
               ]
             },
             "description": "Queries qualified technicians from Redis Hash cache, or queries available technicians for a specific slot."
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -631,7 +628,8 @@
               ]
             },
             "description": "Lists all active service catalog packages with technical durations, required skill IDs, and offset pagination."
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -724,7 +722,8 @@
               ]
             },
             "description": "Searches customers with full audit fields and offset pagination."
-          }
+          },
+          "response": []
         },
         {
           "name": "GET /v1/me/vehicles — List Customer Registered Vehicles",
@@ -783,8 +782,8 @@
                 {
                   "key": "code",
                   "value": "VEH",
-                  "disabled": true,
-                  "description": "Filter by vehicle code"
+                  "description": "Filter by vehicle code",
+                  "disabled": true
                 },
                 {
                   "key": "license_plate",
@@ -809,7 +808,8 @@
               ]
             },
             "description": "Lists vehicles registered to the currently authenticated customer."
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -860,7 +860,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/appointments/availability?dealership_id={{dealershipId}}&date={{targetDate}}&service_type_ids=1,2&per_page=10&page=1",
+              "raw": "{{baseUrl}}/v1/appointments/availability?dealer_ship_id={{dealershipId}}&date={{targetDate}}&service_type_ids=1,2&per_page=10&page=1",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -871,9 +871,9 @@
               ],
               "query": [
                 {
-                  "key": "dealership_id",
+                  "key": "dealer_ship_id",
                   "value": "{{dealershipId}}",
-                  "description": "Dealership ID (snake_case)"
+                  "description": "Dealership ID (snake_case alias)"
                 },
                 {
                   "key": "date",
@@ -898,7 +898,8 @@
               ]
             },
             "description": "Queries slot grid availability for an appointment booking flow using snake_case parameters."
-          }
+          },
+          "response": []
         },
         {
           "name": "GET /v1/appointments — List Customer Appointments",
@@ -981,7 +982,8 @@
               ]
             },
             "description": "Lists appointments filtered by date range and status with offset pagination. Test script automatically extracts existing appointmentId."
-          }
+          },
+          "response": []
         },
         {
           "name": "POST /v1/appointments — Create Appointment (Snake_case Input Body)",
@@ -1047,11 +1049,17 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"dealership_id\": \"1\",\n  \"vehicle_id\": \"1\",\n  \"service_type_ids\": [\n    \"1\"\n  ],\n  \"start_at\": \"{{dynamicStartAt}}\",\n  \"technician_id\": \"1\",\n  \"customer_notes\": \"Periodic checkup and engine diagnostic\"\n}"
+              "raw": "{\n  \"dealer_ship_id\": \"1\",\n  \"vehicle_id\": \"1\",\n  \"service_type_ids\": [\n    \"1\"\n  ],\n  \"start_at\": \"{{dynamicStartAt}}\",\n  \"technician_id\": \"1\",\n  \"customer_notes\": \"Periodic checkup and engine diagnostic\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/v1/appointments",
@@ -1064,7 +1072,8 @@
               ]
             },
             "description": "Creates an appointment with complete snake_case body properties. Verifies QueryParamNormalizerMiddleware converts dealer_ship_id -> dealershipId seamlessly without triggering forbidNonWhitelisted errors."
-          }
+          },
+          "response": []
         },
         {
           "name": "GET /v1/appointments/:id — Get Appointment Details",
@@ -1110,7 +1119,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/appointments/{{appointmentId}}",
+              "raw": "{{baseUrl}}/v1/appointments/:id",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1128,7 +1137,8 @@
               ]
             },
             "description": "Fetches complete appointment details including vehicle, service types, assigned technician, and audit fields."
-          }
+          },
+          "response": []
         },
         {
           "name": "GET /v1/appointments/technician/:technicianId — Technician Scheduled Appointments",
@@ -1174,7 +1184,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/appointments/technician/{{technicianId}}?limit=10",
+              "raw": "{{baseUrl}}/v1/appointments/technician/:technicianId?limit=10",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1184,22 +1194,23 @@
                 "technician",
                 ":technicianId"
               ],
-              "variable": [
-                {
-                  "key": "technicianId",
-                  "value": "{{technicianId}}"
-                }
-              ],
               "query": [
                 {
                   "key": "limit",
                   "value": "10",
                   "description": "Cursor limit"
                 }
+              ],
+              "variable": [
+                {
+                  "key": "technicianId",
+                  "value": "{{technicianId}}"
+                }
               ]
             },
             "description": "Retrieves the daily schedule and appointed jobs for a specific technician."
-          }
+          },
+          "response": []
         },
         {
           "name": "PATCH /v1/appointments/:id — Customer Update Notes",
@@ -1242,6 +1253,18 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"1\"",
+                "type": "text",
+                "description": "Optimistic lock version"
               }
             ],
             "body": {
@@ -1249,7 +1272,7 @@
               "raw": "{\n  \"customer_notes\": \"Please also inspect tire pressure and fluid levels\",\n  \"notes\": \"Internal reception memo\",\n  \"version\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/appointments/{{appointmentId}}",
+              "raw": "{{baseUrl}}/v1/appointments/:id",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1266,7 +1289,8 @@
               ]
             },
             "description": "Updates appointment notes with optimistic lock version checking."
-          }
+          },
+          "response": []
         },
         {
           "name": "DELETE /v1/appointments/:id — Customer Cancel Appointment",
@@ -1309,6 +1333,12 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
@@ -1316,7 +1346,7 @@
               "raw": "{\n  \"reason\": \"Customer schedule conflict\",\n  \"version\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/appointments/{{appointmentId}}",
+              "raw": "{{baseUrl}}/v1/appointments/:id",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1333,7 +1363,8 @@
               ]
             },
             "description": "Cancels an appointment before the lead-time cutoff window."
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -1381,6 +1412,12 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
@@ -1388,7 +1425,7 @@
               "raw": "{\n  \"technician_id\": \"1\",\n  \"version\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/staff/appointments/{{appointmentId}}/approve",
+              "raw": "{{baseUrl}}/v1/staff/appointments/:id/approve",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1407,7 +1444,8 @@
               ]
             },
             "description": "Transitions appointment status from PENDING to CONFIRMED."
-          }
+          },
+          "response": []
         },
         {
           "name": "POST /v1/staff/appointments/:id/reject — Staff Reject",
@@ -1450,6 +1488,12 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
@@ -1457,7 +1501,7 @@
               "raw": "{\n  \"reason\": \"Workshop capacity fully utilized due to emergency recall\",\n  \"version\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/staff/appointments/{{appointmentId}}/reject",
+              "raw": "{{baseUrl}}/v1/staff/appointments/:id/reject",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1476,7 +1520,8 @@
               ]
             },
             "description": "Rejects appointment submission and frees allocated bay/technician slots."
-          }
+          },
+          "response": []
         },
         {
           "name": "POST /v1/staff/appointments/:id/check-in — Receptionist Check-in",
@@ -1519,6 +1564,12 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
@@ -1526,7 +1577,7 @@
               "raw": "{\n  \"version\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/staff/appointments/{{appointmentId}}/check-in",
+              "raw": "{{baseUrl}}/v1/staff/appointments/:id/check-in",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1545,7 +1596,8 @@
               ]
             },
             "description": "Marks customer vehicle as physically checked-in at the service reception desk."
-          }
+          },
+          "response": []
         },
         {
           "name": "POST /v1/staff/appointments/:id/start — Technician Start Service",
@@ -1588,6 +1640,12 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
@@ -1595,7 +1653,7 @@
               "raw": "{\n  \"technician_id\": \"1\",\n  \"version\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/staff/appointments/{{appointmentId}}/start",
+              "raw": "{{baseUrl}}/v1/staff/appointments/:id/start",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1614,7 +1672,8 @@
               ]
             },
             "description": "Transitions appointment status to IN_PROGRESS when work begins in the service bay."
-          }
+          },
+          "response": []
         },
         {
           "name": "POST /v1/staff/appointments/:id/complete — Technician Complete Service",
@@ -1657,6 +1716,12 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
@@ -1664,7 +1729,7 @@
               "raw": "{\n  \"notes\": \"All service items completed and vehicle QC passed\",\n  \"version\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/staff/appointments/{{appointmentId}}/complete",
+              "raw": "{{baseUrl}}/v1/staff/appointments/:id/complete",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1683,7 +1748,8 @@
               ]
             },
             "description": "Marks service COMPLETED and immediately releases bay and technician resources."
-          }
+          },
+          "response": []
         },
         {
           "name": "POST /v1/staff/appointments/:id/no-show — Mark No-Show",
@@ -1726,6 +1792,12 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
@@ -1733,7 +1805,7 @@
               "raw": "{\n  \"version\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/staff/appointments/{{appointmentId}}/no-show",
+              "raw": "{{baseUrl}}/v1/staff/appointments/:id/no-show",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1752,7 +1824,8 @@
               ]
             },
             "description": "Marks appointment as NO_SHOW if customer does not arrive within grace threshold."
-          }
+          },
+          "response": []
         },
         {
           "name": "POST /v1/staff/appointments/:id/reassign — Staff Reassign Technician",
@@ -1795,6 +1868,12 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
@@ -1802,7 +1881,7 @@
               "raw": "{\n  \"technician_id\": \"2\",\n  \"reason\": \"Technician 1 assigned to urgent electrical diagnostic\",\n  \"version\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/staff/appointments/{{appointmentId}}/reassign",
+              "raw": "{{baseUrl}}/v1/staff/appointments/:id/reassign",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1821,7 +1900,8 @@
               ]
             },
             "description": "Reassigns another qualified technician to the appointment without altering time or bay."
-          }
+          },
+          "response": []
         },
         {
           "name": "POST /v1/staff/appointments/:id/reschedule — Staff Reschedule (Lead-time Bypass)",
@@ -1864,6 +1944,12 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
@@ -1871,7 +1957,7 @@
               "raw": "{\n  \"start_at\": \"2026-11-02T03:00:00.000Z\",\n  \"technician_id\": \"1\",\n  \"reason\": \"Customer requested earlier slot via front desk\",\n  \"version\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/staff/appointments/{{appointmentId}}/reschedule",
+              "raw": "{{baseUrl}}/v1/staff/appointments/:id/reschedule",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1890,7 +1976,8 @@
               ]
             },
             "description": "Staff reschedules appointment with privileged bypass of customer advance lead-time constraints."
-          }
+          },
+          "response": []
         },
         {
           "name": "POST /v1/staff/appointments/swap — Atomic Slot Swap",
@@ -1933,6 +2020,12 @@
                 "key": "x-tenant-id",
                 "value": "{{tenantId}}",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{}}",
+                "type": "text",
+                "description": "Unique key to ensure idempotent request execution"
               }
             ],
             "body": {
@@ -1952,7 +2045,8 @@
               ]
             },
             "description": "Atomically swaps time windows between two appointments within an isolated DB transaction."
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -1992,7 +2086,8 @@
               ]
             },
             "description": "Server-Sent Events (SSE) stream for real-time customer status changes and dispatch notifications."
-          }
+          },
+          "response": []
         },
         {
           "name": "GET /v1/staff/appointments/stream — Dealership Live Board (SSE)",
@@ -2035,9 +2130,94 @@
               ]
             },
             "description": "SSE stream pushing real-time workshop board events, check-ins, bay changes, and appointment completions to staff screens."
-          }
+          },
+          "response": []
         }
       ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "bearer_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhMTExMTExMS0xMTExLTExMTEtMTExMS0xMTExMTExMTExMTEiLCJyb2xlcyI6WyJjdXN0b21lciIsInN0YWZmIl0sInRlbmFudF9pZCI6MSwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDozMDAwIiwiYXVkIjoic2NoZWR1bGVyLWFwaSJ9.bW9ja19zaWc",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "dealershipId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "vehicleId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "serviceTypeId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "technicianId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "appointmentId",
+      "value": "cc4d062e-08ee-4539-b989-dd00f6ba18be",
+      "type": "string"
+    },
+    {
+      "key": "appointmentId2",
+      "value": "dd5e173f-19ff-5640-c090-ee11g7cb29cf",
+      "type": "string"
+    },
+    {
+      "key": "targetDate",
+      "value": "2026-11-02",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhMTExMTExMS0xMTExLTExMTEtMTExMS0xMTExMTExMTExMTEiLCJyb2xlcyI6WyJjdXN0b21lciIsInN0YWZmIl0sInRlbmFudF9pZCI6MSwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDozMDAwIiwiYXVkIjoic2NoZWR1bGVyLWFwaSJ9.bW9ja19zaWc",
+      "type": "string"
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "e1a2b3c4-5678-90ab-cdef-1234567890ab",
+      "type": "string"
     }
   ]
 }
