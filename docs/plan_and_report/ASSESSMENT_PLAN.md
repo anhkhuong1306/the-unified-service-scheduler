@@ -97,7 +97,7 @@
 ---
 
 ### ✅ Ngày 6: OpenAPI Docs, Live Demo Screens, README, QA Matrices & Postman Collections (ĐÃ HOÀN THÀNH)
-- [x] **6.1. Tích hợp `@nestjs/swagger` (`/docs/api`), 2 Màn hình Live SSE Demo (`/demo` cho Customer & Dealership/Technician) & `@nestjs/terminus` Health Checks (`/health/live`, `/health/ready`).**
+- [x] **6.1. Tích hợp `@nestjs/swagger` (`/docs/api`), Real-Time SSE Streams (`/v1/appointments/stream` & `/v1/staff/appointments/stream`) & `@nestjs/terminus` Health Checks (`/health/live`, `/health/ready`).**
 - [x] **6.2. Viết `source/README.md` kèm bộ `cURL` mẫu và mục AI Collaboration Narrative (17 vòng phản biện).**
 - [x] **6.3. Bộ QA Test Matrices (Excel) & Executable Postman Collections (`docs/test/`):**
   - Xây dựng file Excel test matrix chuẩn 2 sheet (Spec & Live Docker Execution Evidence): `The Unified Service Scheduler — Comprehensive Master API TestCases.xlsx` (28 TC bao phủ toàn bộ 8 module hệ thống).

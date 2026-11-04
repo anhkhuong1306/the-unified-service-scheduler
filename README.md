@@ -52,7 +52,7 @@ source/
 2. **Real-Time Reactive Streaming (`@Sse()` + PostgreSQL `LISTEN / NOTIFY`):**
    - Transactional post-commit event dispatch (`pg_notify('appointment_events', payload)`) delivers live notifications strictly upon database `COMMIT`, eliminating phantom events.
    - Synchronizes events across horizontal API pods and background worker processes (`apps/scheduler-worker`) with zero external message broker (Kafka/RabbitMQ) overhead in MVP.
-   - Monotonic appointment `version` ordering prevents client-side out-of-order race conditions. Includes dual live demo screens (`/demo` for Customer & Dealership Board).
+   - Monotonic appointment `version` ordering prevents client-side out-of-order race conditions. Real-time streams are exposed via `@Sse()` endpoints (`/v1/appointments/stream` for Customers and `/v1/staff/appointments/stream` for Dealership Staff).
 3. **Advanced Workshop Lifecycle & Atomic Slot Swap:**
    - Strict `AppointmentStateMachine` governs full lifecycle transitions (`approve`, `reject`, `check_in`, `start`, `complete`, `no_show`, `expire`, `cancel`).
    - Staff operations support Early-Arrival Rescheduling (`POST /v1/staff/appointments/:id/reschedule` overriding lead time) and qualification-checked Technician Reassignment.
