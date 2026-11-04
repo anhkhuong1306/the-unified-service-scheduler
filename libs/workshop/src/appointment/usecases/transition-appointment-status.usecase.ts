@@ -50,6 +50,8 @@ export class TransitionAppointmentStatusUseCase {
         throw new ResourceNotFoundException(`Appointment not found with ID ${appointmentId}`);
       }
 
+      Appointment.assertStaffDealership(appointment, actor);
+
       const fromStatus = appointment.status;
       const targetStatus = this.stateMachine.validateTransition(fromStatus, action, actor);
       const actorIdentifier = actor.actorCode || actor.actorName || actor.actorSub;

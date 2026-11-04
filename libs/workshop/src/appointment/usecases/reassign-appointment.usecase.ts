@@ -11,7 +11,6 @@ import {
 import { Appointment } from '../entities/appointment.entity';
 import { ReassignAppointmentDto } from '../dto/reassign-appointment.dto';
 import { ActorContext } from '../types/actor-context.interface';
-import { ACTIVE_STATUSES } from '../types/appointment.constants';
 import { AppointmentEventsService } from '../services/appointment-events.service';
 import { BookingLockService } from '../services/booking-lock.service';
 import { AppointmentRepository } from '../repositories/appointment.repository';
@@ -66,12 +65,8 @@ export class ReassignAppointmentUseCase {
         throw new ResourceNotFoundException(`Appointment not found with ID ${appointmentId}`);
       }
 
-      const isActive = (ACTIVE_STATUSES as readonly string[]).includes(appointment.status);
-      if (!isActive) {
-        throw new InvalidStateTransitionException(
-          `Cannot reassign appointment in ${appointment.status} status`,
-        );
-      }
+      Appointment.assertStaffDealership(appointment, actor);
+      Appointment.assertModifiable(appointment, 'reassign');
 
       await this.locks.lockDealership(manager, appointment.dealershipId);
 

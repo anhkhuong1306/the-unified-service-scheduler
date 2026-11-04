@@ -25,8 +25,17 @@ export class RescheduleAppointmentDto {
   public technicianId?: string;
 
   @ApiPropertyOptional({
-    description: 'Reason or notes for early arrival / reschedule',
+    description: 'Reason for early arrival / reschedule (stored in audit log)',
     example: 'Customer arrived early for check-in',
+  })
+  @IsOptional()
+  @IsString()
+  @Trim()
+  public reason?: string;
+
+  @ApiPropertyOptional({
+    description: 'Additional staff operational notes',
+    example: 'Customer arrived early at workshop reception',
   })
   @IsOptional()
   @IsString()

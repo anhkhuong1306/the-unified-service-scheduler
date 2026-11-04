@@ -7,7 +7,12 @@ import {
   Public,
 } from '@app/common';
 import { TokenRequestDto, TokenResponse } from './dto';
-import { SAMPLE_TOKEN_RESPONSE, TOKEN_REQUEST_BODY_EXAMPLES } from './samples/auth-swagger.samples'
+import {
+  DEFAULT_MOCK_CUSTOMER_SUB,
+  DEFAULT_MOCK_STAFF_SUB,
+  SAMPLE_TOKEN_RESPONSE,
+  TOKEN_REQUEST_BODY_EXAMPLES,
+} from './samples/auth-swagger.samples';
 
 @ApiTags('Authentication & Token')
 @Controller({ path: 'v1/auth' })
@@ -47,7 +52,6 @@ export class AuthController {
   }
 
   private createToken(dto: TokenRequestDto): ApiResponseEnvelope<TokenResponse> {
-    const sub = dto.userId || dto.sub || 'a1111111-1111-1111-1111-111111111111';
     let role = dto.role || 'customer';
     if (dto.roles) {
       if (Array.isArray(dto.roles) && dto.roles.length > 0) {
@@ -56,6 +60,10 @@ export class AuthController {
         role = dto.roles as any;
       }
     }
+    const sub =
+      dto.userId ||
+      dto.sub ||
+      (role === 'staff' ? DEFAULT_MOCK_STAFF_SUB : DEFAULT_MOCK_CUSTOMER_SUB);
     const tenantId = Number(dto.tenantId ?? 1);
 
     const header = { alg: 'HS256', typ: 'JWT' };

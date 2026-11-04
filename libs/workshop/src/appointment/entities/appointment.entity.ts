@@ -5,7 +5,13 @@ import {
   PrimaryGeneratedColumn,
   VersionColumn,
 } from 'typeorm';
-import { BaseAuditEntity, InvalidStateTransitionException } from '@app/common';
+import {
+  BaseAuditEntity,
+  DomainException,
+  ErrorCode,
+  ForbiddenDomainException,
+  InvalidStateTransitionException,
+} from '@app/common';
 import { AppointmentStatus } from '../enums/appointment-status.enum';
 import { ACTIVE_STATUSES } from '../types/appointment.constants';
 import { ActorContext } from '../types/actor-context.interface';
@@ -117,6 +123,112 @@ export class Appointment extends BaseAuditEntity {
 
   public set cancelled_by(value: string | null) {
     this.cancelledBy = value;
+  }
+
+  /**
+   * Checks whether a status is modifiable (PENDING or CONFIRMED).
+   */
+  public static isModifiable(status: AppointmentStatus): boolean {
+    return status === AppointmentStatus.PENDING || status === AppointmentStatus.CONFIRMED;
+  }
+
+  /**
+   * Checks whether the scheduled start time is in the past relative to referenceTime.
+   */
+  public static isPast(startAt: Date | string, referenceTime: Date = new Date()): boolean {
+    return new Date(startAt).getTime() <= referenceTime.getTime();
+  }
+
+  /**
+   * Asserts that an appointment is modifiable and not in the past.
+   */
+  public static assertModifiable(
+    appointment: { status: AppointmentStatus; startAt: Date | string },
+    action: string = 'modify',
+    referenceTime: Date = new Date(),
+  ): void {
+    if (!Appointment.isModifiable(appointment.status)) {
+      throw new InvalidStateTransitionException(
+        `Cannot ${action} appointment in ${appointment.status} status. Only PENDING or CONFIRMED appointments can be modified.`,
+      );
+    }
+
+    if (Appointment.isPast(appointment.startAt, referenceTime)) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Cannot modify an appointment that is already in the past',
+        null,
+        400,
+      );
+    }
+  }
+
+  /**
+   * Asserts that two appointments are swappable (both PENDING/CONFIRMED and not in the past).
+   */
+  public static assertSwappable(
+    apptA: { status: AppointmentStatus; startAt: Date | string },
+    apptB: { status: AppointmentStatus; startAt: Date | string },
+    referenceTime: Date = new Date(),
+  ): void {
+    if (!Appointment.isModifiable(apptA.status) || !Appointment.isModifiable(apptB.status)) {
+      throw new InvalidStateTransitionException(
+        `Appointments can only be swapped when status is PENDING or CONFIRMED (found statuses: A=${apptA.status}, B=${apptB.status})`,
+      );
+    }
+
+    if (Appointment.isPast(apptA.startAt, referenceTime) || Appointment.isPast(apptB.startAt, referenceTime)) {
+      throw new DomainException(
+        ErrorCode.VALIDATION_FAILED,
+        'Cannot swap appointments that are already in the past',
+        null,
+        400,
+      );
+    }
+  }
+
+  /**
+   * Asserts that a staff member belongs to the same dealership as this appointment.
+   */
+  public static assertStaffDealership(
+    appointment: { dealershipId: string | number },
+    actor: ActorContext,
+  ): void {
+    if (actor.actorType === 'staff') {
+      if (!actor.dealershipId || String(appointment.dealershipId) !== String(actor.dealershipId)) {
+        throw new ForbiddenDomainException(
+          'Staff member cannot modify appointments belonging to another dealership',
+        );
+      }
+    }
+  }
+
+  /**
+   * Instance method: checks whether this appointment is modifiable.
+   */
+  public isModifiable(): boolean {
+    return Appointment.isModifiable(this.status);
+  }
+
+  /**
+   * Instance method: checks whether this appointment scheduled start is in the past.
+   */
+  public isPast(referenceTime: Date = new Date()): boolean {
+    return Appointment.isPast(this.startAt, referenceTime);
+  }
+
+  /**
+   * Instance method: asserts this appointment is modifiable.
+   */
+  public assertModifiable(action: string = 'modify', referenceTime: Date = new Date()): void {
+    Appointment.assertModifiable(this, action, referenceTime);
+  }
+
+  /**
+   * Instance method: asserts staff belongs to the same dealership.
+   */
+  public assertStaffDealership(actor: ActorContext): void {
+    Appointment.assertStaffDealership(this, actor);
   }
 
   /**
